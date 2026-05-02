@@ -4,10 +4,11 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
+// 🔑 CONFIG
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = '1499955518725423244';
 const GUILD_ID = '1488371938265923705';
-const ROL_ID = '1490534612793823282';
+const ROL_ID = '1249140217663979622'; // 👈 TU ROL CORRECTO
 
 // 💰 PRECIOS
 const precios = {
@@ -30,7 +31,7 @@ const packs = {
   full2: { nombre: 'Full II', armas: ['AK-47', 'Deagle', 'Tec-9', 'Escopeta'], total: 10000 }
 };
 
-// 📦 COMANDOS (ARREGLADOS)
+// 📦 COMANDOS
 const commands = [
 
   new SlashCommandBuilder()
@@ -51,7 +52,7 @@ const commands = [
     .setDescription('Ver precio de pack')
     .addStringOption(option =>
       option.setName('tipo')
-        .setDescription('Tipo de pack') // 🔥 ESTA LÍNEA ERA CLAVE
+        .setDescription('Tipo de pack')
         .setRequired(true)
         .addChoices(
           { name: 'Corto–Medio', value: 'corto' },
@@ -71,25 +72,29 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 client.once('ready', async () => {
   console.log(`Bot listo como ${client.user.tag}`);
 
-  await rest.put(
-    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-    { body: commands }
-  );
-
-  console.log('Comandos registrados');
+  try {
+    await rest.put(
+      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+      { body: commands }
+    );
+    console.log('Comandos registrados');
+  } catch (err) {
+    console.error(err);
+  }
 });
 
 // 🎮 INTERACCIONES
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
+  // 🔒 VERIFICAR ROL
   if (!interaction.member.roles.cache.has(ROL_ID)) {
     return interaction.reply({ content: 'No tienes permiso.', ephemeral: true });
   }
 
   try {
 
-    // ARMAMENTO
+    // 📦 ARMAMENTO
     if (interaction.commandName === 'armamento') {
 
       await interaction.deferReply();
@@ -103,13 +108,18 @@ client.on('interactionCreate', async interaction => {
             name: 'Armas',
             value:
               'AK-47 — $3.240\nMP5 — $2.400\nEscopeta — $2.400\nDeagle — $2.400\nTec-9 — $2.000\nUzi — $2.000'
+          },
+          {
+            name: 'Packs',
+            value:
+              'Corto–Medio — $4.500\nMedio I — $4.400\nMedio II — $4.000\nMedio III — $4.000\nFull I — $20.000\nFull II — $10.000'
           }
         );
 
       return interaction.editReply({ embeds: [embed] });
     }
 
-    // PAGO
+    // 💰 PAGO
     if (interaction.commandName === 'pago') {
 
       await interaction.deferReply();
@@ -127,6 +137,7 @@ client.on('interactionCreate', async interaction => {
 
       for (let arma of armas) {
         if (!arma) continue;
+
         arma = arma.toLowerCase();
 
         if (precios[arma]) {
@@ -135,10 +146,10 @@ client.on('interactionCreate', async interaction => {
         }
       }
 
-      return interaction.editReply(`Armas: ${usadas.join(', ')}\nTotal: $${total}`);
+      return interaction.editReply(`Armas: ${usadas.join(', ')}\n💰 Total: $${total}`);
     }
 
-    // PACK
+    // 📦 PACK
     if (interaction.commandName === 'pack') {
 
       await interaction.deferReply();
@@ -147,12 +158,12 @@ client.on('interactionCreate', async interaction => {
       const pack = packs[tipo];
 
       return interaction.editReply(
-        `📦 ${pack.nombre}\nArmas: ${pack.armas.join(', ')}\nTotal: $${pack.total}`
+        `📦 ${pack.nombre}\nArmas: ${pack.armas.join(', ')}\n💰 Total: $${pack.total}`
       );
     }
 
-  } catch (err) {
-    console.error(err);
+  } catch (error) {
+    console.error(error);
 
     if (interaction.deferred) {
       interaction.editReply('Error.');
