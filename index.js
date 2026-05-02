@@ -25,23 +25,20 @@ const precios = {
 
 // ===== PACKS =====
 const packs = {
-  corto: { nombre: 'Corto–Medio', total: 4500 },
-  medio1: { nombre: 'Medio I', total: 4400 },
-  medio2: { nombre: 'Medio II', total: 4000 },
-  medio3: { nombre: 'Medio III', total: 4000 },
-  full1: { nombre: 'Full I', total: 20000 },
-  full2: { nombre: 'Full II', total: 10000 }
+  corto: { nombre: 'Pack Corto–Medio Alcance', total: 4500 },
+  medio1: { nombre: 'Pack Medio Alcance I', total: 4400 },
+  medio2: { nombre: 'Pack Medio Alcance II', total: 4000 },
+  medio3: { nombre: 'Pack Medio Alcance III', total: 4000 },
+  full1: { nombre: 'Full Pack I', total: 20000 },
+  full2: { nombre: 'Full Pack II', total: 10000 }
 };
 
 // ===== COMANDOS =====
 const commands = [
-  new SlashCommandBuilder()
-    .setName('armamento')
-    .setDescription('Ver armamento'),
-
+  new SlashCommandBuilder().setName('armamento').setDescription('Ver catálogo'),
   new SlashCommandBuilder()
     .setName('pago')
-    .setDescription('Calcular pago')
+    .setDescription('Calcular total')
     .addStringOption(o => o.setName('arma1').setDescription('Arma 1').setRequired(true))
     .addStringOption(o => o.setName('arma2').setDescription('Arma 2'))
     .addStringOption(o => o.setName('arma3').setDescription('Arma 3'))
@@ -72,6 +69,7 @@ const commands = [
     .addStringOption(o => o.setName('arma').setDescription('Arma').setRequired(true))
     .addStringOption(o => o.setName('precio').setDescription('Precio').setRequired(true))
     .addAttachmentOption(o => o.setName('imagen').setDescription('Comprobante').setRequired(true))
+
 ].map(c => c.toJSON());
 
 // ===== REGISTRO =====
@@ -80,20 +78,10 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 client.once('clientReady', async () => {
   console.log('Bot listo');
 
-  try {
-    // limpiar comandos viejos
-    await rest.put(Routes.applicationCommands(CLIENT_ID), { body: [] });
-
-    // registrar nuevos
-    await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-      { body: commands }
-    );
-
-    console.log('Comandos registrados correctamente');
-  } catch (error) {
-    console.error('Error registrando:', error);
-  }
+  await rest.put(
+    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+    { body: commands }
+  );
 });
 
 // ===== INTERACCIONES =====
@@ -107,9 +95,68 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({
         embeds: [
           new EmbedBuilder()
-            .setColor(0x2b2d31)
-            .setTitle('Armamento')
-            .setDescription('Usa /pago o /pack para calcular compras.')
+            .setColor(0x1e1f22)
+            .setTitle('Catálogo de Armamento')
+            .setDescription(
+`Se comunica a todo el personal del **United States Marine Corps** el armamento actualmente disponible para su compra.
+
+**M4**
+
+Disponibilidad: Desde <@&1249078539135877169> en adelante, los Privates APB no podrán adquirir dicha arma hasta ser **PVT oficial**
+
+**Precio:** $20.000 
+
+--------
+
+## **Armas disponibles para todo el personal de la** <@&1249089172308885576>
+
+- **AK-47** — $3.240
+- **MP5** — $2.400
+- **Escopeta** — $2.400
+- **Desert Eagle** — $2.400
+- **Tec-9** — $2.000
+- **Uzi** — $2.000
+
+--------
+
+## **Packs disponibles**
+
+**Pack Corto–Medio Alcance**
+- Desert Eagle
+- Escopeta  
+Total: **$4.500**
+
+**Pack Medio Alcance I**
+- MP5
+- Escopeta  
+Total: **$4.400**
+
+**Pack Medio Alcance II**
+- Tec-9
+- Escopeta  
+Total: **$4.000**
+
+**Pack Medio Alcance III**
+- Uzi
+- Escopeta  
+Total: **$4.000**
+
+--------
+
+**Full Pack I**
+- M4
+- Desert Eagle
+- MP5
+- Escopeta  
+Total: **$20.000**
+
+**Full Pack II**
+- AK-47
+- Desert Eagle
+- Tec-9
+- Escopeta  
+Total: **$10.000**`
+            )
         ]
       });
     }
@@ -117,6 +164,7 @@ client.on('interactionCreate', async interaction => {
     // ===== PAGO =====
     if (interaction.commandName === 'pago') {
       let total = 0;
+      let lista = [];
 
       const armas = [
         interaction.options.getString('arma1'),
@@ -128,14 +176,23 @@ client.on('interactionCreate', async interaction => {
       for (let arma of armas) {
         if (!arma) continue;
         arma = arma.toLowerCase();
-        if (precios[arma]) total += precios[arma];
+
+        if (precios[arma]) {
+          total += precios[arma];
+          lista.push(`- ${arma.toUpperCase()} — $${precios[arma]}`);
+        }
       }
 
-      return interaction.reply(
-`Total: $${total}
-
-Debes pagar en la caja fuerte /donar y pasar comprobante`
-      );
+      return interaction.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0x1e1f22)
+            .setTitle('Resumen de Compra')
+            .setDescription(lista.join('\n') || 'Sin armas')
+            .addFields({ name: 'Total a pagar', value: `$${total}` })
+            .setFooter({ text: 'Debes pagar en la caja fuerte /donar y pasar comprobante' })
+        ]
+      });
     }
 
     // ===== PACK =====
@@ -143,12 +200,15 @@ Debes pagar en la caja fuerte /donar y pasar comprobante`
       const tipo = interaction.options.getString('tipo');
       const pack = packs[tipo];
 
-      return interaction.reply(
-`${pack.nombre}
-Total: $${pack.total}
-
-Debes pagar en la caja fuerte /donar y pasar comprobante`
-      );
+      return interaction.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0x1e1f22)
+            .setTitle(pack.nombre)
+            .addFields({ name: 'Total a pagar', value: `$${pack.total}` })
+            .setFooter({ text: 'Debes pagar en la caja fuerte /donar y pasar comprobante' })
+        ]
+      });
     }
 
     // ===== REGISTRO =====
