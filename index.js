@@ -12,30 +12,11 @@ const ROL_ID = '1249140217663979622';
 const CANAL_REGISTRO = '1249140780493443072';
 const HILO_EXTERNO = '1477760530125947183';
 
-// ===== PRECIOS =====
-const precios = {
-  m4: 20000,
-  ak47: 3240,
-  mp5: 2400,
-  escopeta: 2400,
-  deagle: 2400,
-  tec9: 2000,
-  uzi: 2000
-};
-
-// ===== PACKS =====
-const packs = {
-  corto: { nombre: 'Corto–Medio', armas: ['Deagle', 'Escopeta'], total: 4500 },
-  medio1: { nombre: 'Medio I', armas: ['MP5', 'Escopeta'], total: 4400 },
-  medio2: { nombre: 'Medio II', armas: ['Tec-9', 'Escopeta'], total: 4000 },
-  medio3: { nombre: 'Medio III', armas: ['Uzi', 'Escopeta'], total: 4000 },
-  full1: { nombre: 'Full I', armas: ['M4', 'Deagle', 'MP5', 'Escopeta'], total: 20000 },
-  full2: { nombre: 'Full II', armas: ['AK-47', 'Deagle', 'Tec-9', 'Escopeta'], total: 10000 }
-};
-
 // ===== COMANDOS =====
 const commands = [
-  new SlashCommandBuilder().setName('armamento').setDescription('Catalogo de armas'),
+  new SlashCommandBuilder()
+    .setName('armamento')
+    .setDescription('Catalogo de armas'),
 
   new SlashCommandBuilder()
     .setName('pago')
@@ -73,16 +54,32 @@ const commands = [
     .addAttachmentOption(o => o.setName('imagen').setDescription('Imagen').setRequired(true))
 ].map(c => c.toJSON());
 
-// ===== REGISTRO =====
+// ===== RESET + REGISTRO =====
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 client.once('clientReady', async () => {
   console.log(`Bot listo como ${client.user.tag}`);
 
-  await rest.put(
-    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-    { body: commands }
-  );
+  try {
+    // 🔥 BORRAR TODOS LOS COMANDOS
+    await rest.put(
+      Routes.applicationCommands(CLIENT_ID),
+      { body: [] }
+    );
+
+    console.log('Comandos antiguos eliminados');
+
+    // 🔥 REGISTRAR NUEVOS
+    await rest.put(
+      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+      { body: commands }
+    );
+
+    console.log('Comandos nuevos registrados');
+
+  } catch (error) {
+    console.error(error);
+  }
 });
 
 // ===== INTERACCIONES =====
@@ -94,78 +91,6 @@ client.on('interactionCreate', async interaction => {
   }
 
   try {
-
-    // ===== ARMAMENTO =====
-    if (interaction.commandName === 'armamento') {
-      return interaction.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('CATALOGO DE ARMAMENTO')
-            .setColor(0x2b2d31)
-            .addFields(
-              { name: 'M4', value: '$20.000' },
-              { name: 'ARMAS', value: 'AK-47 — $3.240\nMP5 — $2.400\nEscopeta — $2.400\nDeagle — $2.400\nTec-9 — $2.000\nUzi — $2.000' },
-              { name: 'PACKS', value: 'Corto–Medio — $4.500\nMedio I — $4.400\nMedio II — $4.000\nMedio III — $4.000\nFull I — $20.000\nFull II — $10.000' }
-            )
-        ]
-      });
-    }
-
-    // ===== PAGO =====
-    if (interaction.commandName === 'pago') {
-      const armas = [
-        interaction.options.getString('arma1'),
-        interaction.options.getString('arma2'),
-        interaction.options.getString('arma3'),
-        interaction.options.getString('arma4'),
-        interaction.options.getString('arma5')
-      ];
-
-      let total = 0;
-      let lista = [];
-
-      for (let arma of armas) {
-        if (!arma) continue;
-        arma = arma.toLowerCase();
-
-        if (precios[arma]) {
-          total += precios[arma];
-          lista.push(`${arma.toUpperCase()} — $${precios[arma]}`);
-        }
-      }
-
-      return interaction.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('RESUMEN DE COMPRA')
-            .setColor(0x2b2d31)
-            .setDescription(lista.join('\n') || 'Sin armas')
-            .addFields(
-              { name: 'TOTAL', value: `$${total}` },
-              { name: 'INSTRUCCIONES', value: 'Debes donar y enviar comprobante.' }
-            )
-        ]
-      });
-    }
-
-    // ===== PACK =====
-    if (interaction.commandName === 'pack') {
-      const tipo = interaction.options.getString('tipo');
-      const pack = packs[tipo];
-
-      return interaction.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('PACK')
-            .setColor(0x2b2d31)
-            .addFields(
-              { name: 'TIPO', value: pack.nombre },
-              { name: 'ARMAS', value: pack.armas.join(', ') },
-              { name: 'TOTAL', value: `$${pack.total}` }
-            )
-        ]
-      });
-    }
 
     // ===== REGISTRO =====
     if (interaction.commandName === 'registro') {
@@ -180,22 +105,27 @@ client.on('interactionCreate', async interaction => {
 
       const fecha = new Date().toLocaleDateString();
 
-      // EMBED PRINCIPAL
-      const embed = new EmbedBuilder()
-        .setTitle('COMPROBANTE DE COMPRA')
-        .setColor(0x2b2d31)
-        .addFields(
-          { name: 'VENDEDOR', value: vendedor },
-          { name: 'COMPRADOR', value: comprador.username },
-          { name: 'ARMA', value: arma },
-          { name: 'TOTAL', value: `$${precio}` }
-        )
-        .setImage(imagen.url);
-
+      // CANAL PRINCIPAL
       const canal = await client.channels.fetch(CANAL_REGISTRO).catch(() => null);
-      if (canal) await canal.send({ embeds: [embed] });
 
-      // FORMATO DIFERENTE (HILO)
+      if (canal) {
+        await canal.send({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle('COMPROBANTE DE COMPRA')
+              .setColor(0x2b2d31)
+              .addFields(
+                { name: 'VENDEDOR', value: vendedor },
+                { name: 'COMPRADOR', value: comprador.username },
+                { name: 'ARMA', value: arma },
+                { name: 'TOTAL', value: `$${precio}` }
+              )
+              .setImage(imagen.url)
+          ]
+        });
+      }
+
+      // HILO EXTERNO (FORMATO DIFERENTE)
       const hilo = await client.channels.fetch(HILO_EXTERNO).catch(() => null);
 
       if (hilo) {
@@ -211,33 +141,13 @@ Fecha: ${fecha}`,
         });
       }
 
-      // FACTURA PRIVADA
-      try {
-        await comprador.send({
-          embeds: [
-            new EmbedBuilder()
-              .setTitle('FACTURA')
-              .setColor(0x2b2d31)
-              .addFields(
-                { name: 'PRODUCTO', value: arma },
-                { name: 'TOTAL', value: `$${precio}` },
-                { name: 'FECHA', value: fecha }
-              )
-          ]
-        });
-      } catch {}
-
       return interaction.editReply('Registro enviado correctamente.');
+
     }
 
   } catch (error) {
     console.error(error);
-
-    if (interaction.deferred) {
-      interaction.editReply('Error.');
-    } else {
-      interaction.reply({ content: 'Error.', ephemeral: true });
-    }
+    return interaction.editReply('Error en el comando.');
   }
 });
 
