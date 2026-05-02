@@ -1,7 +1,7 @@
 const express = require('express');
 const app = express();
 
-// KEEP ALIVE
+// KEEP ALIVE (no afecta en Railway pero no molesta)
 app.get('/', (req, res) => {
   res.send('Bot activo');
 });
@@ -19,11 +19,12 @@ const client = new Client({
   ]
 });
 
-// 🔑 CONFIG NUEVA
+// 🔑 CONFIG
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = '1499918194209460275';
 const GUILD_ID = '1123790874741047356';
 const rolID = '1249140217663979622';
+const canalID = '1249140780493443072';
 
 // 💰 PRECIOS
 const precios = {
@@ -49,7 +50,15 @@ const commands = [
     .addStringOption(option => option.setName('arma2').setDescription('Arma 2'))
     .addStringOption(option => option.setName('arma3').setDescription('Arma 3'))
     .addStringOption(option => option.setName('arma4').setDescription('Arma 4'))
-    .addStringOption(option => option.setName('arma5').setDescription('Arma 5'))
+    .addStringOption(option => option.setName('arma5').setDescription('Arma 5')),
+
+  new SlashCommandBuilder()
+    .setName('registro')
+    .setDescription('Enviar comprobante de compra')
+    .addStringOption(option => option.setName('vendedor').setDescription('Nombre del vendedor').setRequired(true))
+    .addStringOption(option => option.setName('comprador').setDescription('Nombre del comprador').setRequired(true))
+    .addStringOption(option => option.setName('arma').setDescription('Arma comprada').setRequired(true))
+    .addAttachmentOption(option => option.setName('imagen').setDescription('Captura del comprobante').setRequired(true))
 ].map(cmd => cmd.toJSON());
 
 // 📡 REGISTRAR
@@ -148,6 +157,33 @@ client.on('interactionCreate', async interaction => {
     return interaction.reply(
       `Armas: ${usadas.join(', ')}\nTotal a pagar: $${total}\n\nDebes donar a la caja fuerte usando /donar y tomar captura y mandar comprobante de pago.`
     );
+  }
+
+  // 📄 REGISTRO DE COMPRA
+  if (interaction.commandName === 'registro') {
+
+    const vendedor = interaction.options.getString('vendedor');
+    const comprador = interaction.options.getString('comprador');
+    const arma = interaction.options.getString('arma');
+    const imagen = interaction.options.getAttachment('imagen');
+
+    const canal = client.channels.cache.get(canalID);
+
+    if (!canal) {
+      return interaction.reply({ content: 'Canal no encontrado', ephemeral: true });
+    }
+
+    await canal.send({
+      content:
+`📄 COMPROBANTE DE COMPRA
+
+Vendedor: ${vendedor}
+Comprador: ${comprador}
+Arma: ${arma}`,
+      files: [imagen.url]
+    });
+
+    return interaction.reply({ content: 'Comprobante enviado correctamente', ephemeral: true });
   }
 });
 
