@@ -43,16 +43,17 @@ const commands = [
   new SlashCommandBuilder()
     .setName('pago')
     .setDescription('Calcular total de armas')
-    .addStringOption(o => o.setName('arma1').setRequired(true))
-    .addStringOption(o => o.setName('arma2'))
-    .addStringOption(o => o.setName('arma3'))
-    .addStringOption(o => o.setName('arma4')),
+    .addStringOption(o => o.setName('arma1').setDescription('Arma 1').setRequired(true))
+    .addStringOption(o => o.setName('arma2').setDescription('Arma 2'))
+    .addStringOption(o => o.setName('arma3').setDescription('Arma 3'))
+    .addStringOption(o => o.setName('arma4').setDescription('Arma 4')),
 
   new SlashCommandBuilder()
     .setName('pack')
     .setDescription('Seleccionar pack')
     .addStringOption(o =>
       o.setName('tipo')
+        .setDescription('Tipo de pack')
         .setRequired(true)
         .addChoices(
           { name: 'Corto–Medio', value: 'corto' },
@@ -67,11 +68,11 @@ const commands = [
   new SlashCommandBuilder()
     .setName('registro')
     .setDescription('Registrar venta')
-    .addStringOption(o => o.setName('vendedor').setRequired(true))
-    .addStringOption(o => o.setName('comprador').setRequired(true))
-    .addStringOption(o => o.setName('arma').setRequired(true))
-    .addStringOption(o => o.setName('precio').setRequired(true))
-    .addAttachmentOption(o => o.setName('imagen').setRequired(true))
+    .addStringOption(o => o.setName('vendedor').setDescription('Nombre del vendedor').setRequired(true))
+    .addStringOption(o => o.setName('comprador').setDescription('Nombre del comprador').setRequired(true))
+    .addStringOption(o => o.setName('arma').setDescription('Arma vendida').setRequired(true))
+    .addStringOption(o => o.setName('precio').setDescription('Precio').setRequired(true))
+    .addAttachmentOption(o => o.setName('imagen').setDescription('Comprobante').setRequired(true))
 
 ].map(c => c.toJSON());
 
@@ -106,7 +107,7 @@ Precio: $20.000
 
 Disponible solo para PVT oficiales
 
-Armas disponibles para todo el personal de la United States Marine Corps
+Armas disponibles para todo el personal
 
 AK-47 — $3.240
 MP5 — $2.400
@@ -190,7 +191,6 @@ Vendedor: ${vendedor}
 Comprador: ${comprador}
 Fecha: ${fecha}`;
 
-      // CANAL 1
       const canal = await client.channels.fetch(CANAL_REGISTRO).catch(() => null);
       if (canal) {
         await canal.send({
@@ -199,7 +199,6 @@ Fecha: ${fecha}`;
         });
       }
 
-      // HILO DISCORD 2
       const hilo = await client.channels.fetch(HILO_EXTERNO).catch(() => null);
       if (hilo) {
         await hilo.send({
