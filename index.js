@@ -10,7 +10,7 @@ const CLIENT_ID = '1499955518725423244';
 const GUILD_ID = '1488371938265923705';
 const ROL_ID = '1249140217663979622';
 const CANAL_REGISTRO = '1249140780493443072';
-const HILO_EXTERNO = '1477760530125947183'; // hilo del otro discord
+const HILO_EXTERNO = '1477760530125947183';
 
 // ===== PRECIOS =====
 const precios = {
@@ -73,7 +73,7 @@ const commands = [
     .addAttachmentOption(o => o.setName('imagen').setDescription('Imagen').setRequired(true))
 ].map(c => c.toJSON());
 
-// ===== REGISTRO DE COMANDOS =====
+// ===== REGISTRO =====
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 client.once('clientReady', async () => {
@@ -167,7 +167,7 @@ client.on('interactionCreate', async interaction => {
       });
     }
 
-    // ===== REGISTRO (MULTI-SERVIDOR + HILO) =====
+    // ===== REGISTRO =====
     if (interaction.commandName === 'registro') {
 
       await interaction.deferReply({ ephemeral: true });
@@ -192,12 +192,11 @@ client.on('interactionCreate', async interaction => {
         )
         .setImage(imagen.url);
 
-      // 📍 TU CANAL
-      const canal = await client.channels.fetch(CANAL_REGISTRO);
+      const canal = await client.channels.fetch(CANAL_REGISTRO).catch(() => null);
       if (canal) await canal.send({ embeds: [embed] });
 
-      // 🌍 HILO OTRO SERVER
-      const hilo = await client.channels.fetch(HILO_EXTERNO);
+      // FORMATO DIFERENTE (HILO)
+      const hilo = await client.channels.fetch(HILO_EXTERNO).catch(() => null);
 
       if (hilo) {
         await hilo.send({
@@ -212,7 +211,7 @@ Fecha: ${fecha}`,
         });
       }
 
-      // 📩 FACTURA PRIVADA
+      // FACTURA PRIVADA
       try {
         await comprador.send({
           embeds: [
