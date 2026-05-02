@@ -36,6 +36,7 @@ const packs = {
 // ===== COMANDOS =====
 const commands = [
   new SlashCommandBuilder().setName('armamento').setDescription('Ver catálogo'),
+
   new SlashCommandBuilder()
     .setName('pago')
     .setDescription('Calcular total')
@@ -43,12 +44,13 @@ const commands = [
     .addStringOption(o => o.setName('arma2').setDescription('Arma 2'))
     .addStringOption(o => o.setName('arma3').setDescription('Arma 3'))
     .addStringOption(o => o.setName('arma4').setDescription('Arma 4')),
+
   new SlashCommandBuilder()
     .setName('pack')
     .setDescription('Seleccionar pack')
     .addStringOption(o =>
       o.setName('tipo')
-        .setDescription('Tipo')
+        .setDescription('Tipo de pack')
         .setRequired(true)
         .addChoices(
           { name: 'Corto–Medio', value: 'corto' },
@@ -59,6 +61,7 @@ const commands = [
           { name: 'Full II', value: 'full2' }
         )
     ),
+
   new SlashCommandBuilder()
     .setName('registro')
     .setDescription('Registrar venta')
@@ -67,9 +70,10 @@ const commands = [
     .addStringOption(o => o.setName('arma').setDescription('Arma').setRequired(true))
     .addStringOption(o => o.setName('precio').setDescription('Precio').setRequired(true))
     .addAttachmentOption(o => o.setName('imagen').setDescription('Comprobante').setRequired(true))
+
 ].map(c => c.toJSON());
 
-// ===== REGISTRO =====
+// ===== REGISTRAR =====
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 client.once('clientReady', async () => {
@@ -86,6 +90,67 @@ client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   try {
+
+    // ===== ARMAMENTO =====
+    if (interaction.commandName === 'armamento') {
+      return interaction.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(COLOR)
+            .setTitle('Catálogo de Armamento')
+            .setDescription('Usa /pago o /pack para calcular compras.')
+        ]
+      });
+    }
+
+    // ===== PAGO =====
+    if (interaction.commandName === 'pago') {
+      let total = 0;
+      let lista = [];
+
+      const armas = [
+        interaction.options.getString('arma1'),
+        interaction.options.getString('arma2'),
+        interaction.options.getString('arma3'),
+        interaction.options.getString('arma4')
+      ];
+
+      for (let arma of armas) {
+        if (!arma) continue;
+        arma = arma.toLowerCase();
+
+        if (precios[arma]) {
+          total += precios[arma];
+          lista.push(`${arma.toUpperCase()} — $${precios[arma]}`);
+        }
+      }
+
+      return interaction.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(COLOR)
+            .setTitle('Resumen de Compra')
+            .setDescription(lista.join('\n') || 'Sin armas')
+            .addFields({ name: 'Total', value: `$${total}` })
+        ]
+      });
+    }
+
+    // ===== PACK =====
+    if (interaction.commandName === 'pack') {
+      const tipo = interaction.options.getString('tipo');
+      const pack = packs[tipo];
+
+      return interaction.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(COLOR)
+            .setTitle(pack.nombre)
+            .setDescription(pack.armas.join('\n'))
+            .addFields({ name: 'Total', value: `$${pack.total}` })
+        ]
+      });
+    }
 
     // ===== REGISTRO =====
     if (interaction.commandName === 'registro') {
@@ -114,24 +179,21 @@ Comprador: ${comprador}`;
       try {
         const canal = await client.channels.fetch(CANAL_REGISTRO);
 
-        if (!canal || canal.type !== ChannelType.GuildText) {
-          return console.log('El canal no es válido o no es de texto');
+        if (canal && canal.type === ChannelType.GuildText) {
+          await canal.send({
+            content: mensaje,
+            files: [{ attachment: imagen.url }]
+          });
         }
 
-        await canal.send({
-          content: mensaje,
-          files: [{ attachment: imagen.url }]
-        });
-
-        console.log('Registro enviado al canal correctamente');
-
       } catch (err) {
-        console.log('ERROR REAL CANAL:', err.message);
+        console.log('Error canal:', err.message);
       }
     }
 
   } catch (error) {
     console.error(error);
+    interaction.reply({ content: 'Error.', ephemeral: true });
   }
 });
 
