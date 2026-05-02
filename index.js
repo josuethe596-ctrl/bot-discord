@@ -4,13 +4,12 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
-// 🔑 CONFIG
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = '1499955518725423244';
 const GUILD_ID = '1488371938265923705';
 const ROL_ID = '1249140217663979622';
 
-// 💰 PRECIOS
+// PRECIOS
 const precios = {
   m4: 20000,
   ak47: 3240,
@@ -21,7 +20,7 @@ const precios = {
   uzi: 2000
 };
 
-// 📦 PACKS
+// PACKS
 const packs = {
   corto: { nombre: 'Corto–Medio', armas: ['Deagle', 'Escopeta'], total: 4500 },
   medio1: { nombre: 'Medio I', armas: ['MP5', 'Escopeta'], total: 4400 },
@@ -31,16 +30,15 @@ const packs = {
   full2: { nombre: 'Full II', armas: ['AK-47', 'Deagle', 'Tec-9', 'Escopeta'], total: 10000 }
 };
 
-// 📦 COMANDOS
+// COMANDOS
 const commands = [
-
   new SlashCommandBuilder()
     .setName('armamento')
-    .setDescription('Ver catálogo de armas'),
+    .setDescription('Catalogo de armas'),
 
   new SlashCommandBuilder()
     .setName('pago')
-    .setDescription('Calcular total de armas')
+    .setDescription('Calcular total')
     .addStringOption(o => o.setName('arma1').setDescription('Arma 1').setRequired(true))
     .addStringOption(o => o.setName('arma2').setDescription('Arma 2'))
     .addStringOption(o => o.setName('arma3').setDescription('Arma 3'))
@@ -49,7 +47,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('pack')
-    .setDescription('Ver precio de pack')
+    .setDescription('Calcular pack')
     .addStringOption(option =>
       option.setName('tipo')
         .setDescription('Tipo de pack')
@@ -63,10 +61,9 @@ const commands = [
           { name: 'Full II', value: 'full2' }
         )
     )
-
 ].map(c => c.toJSON());
 
-// 📡 REGISTRO
+// REGISTRO
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 client.once('ready', async () => {
@@ -80,58 +77,42 @@ client.once('ready', async () => {
   console.log('Comandos registrados');
 });
 
-// 🎮 INTERACCIONES
+// INTERACCIONES
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  // 🔒 ROL
   if (!interaction.member.roles.cache.has(ROL_ID)) {
     return interaction.reply({ content: 'No tienes permiso.', ephemeral: true });
   }
 
   try {
 
-    // 🛒 ARMAMENTO
+    // ARMAMENTO
     if (interaction.commandName === 'armamento') {
 
       await interaction.deferReply();
 
       const embed = new EmbedBuilder()
-        .setTitle('🛒 CATÁLOGO DE ARMAMENTO')
+        .setTitle('CATALOGO DE ARMAMENTO')
         .setColor(0x2b2d31)
-        .setDescription('Selecciona tu armamento disponible')
         .addFields(
+          { name: 'M4', value: '$20.000' },
           {
-            name: '🔫 Arma Premium',
-            value: '**M4** — 💰 $20.000',
+            name: 'ARMAS',
+            value:
+              'AK-47 — $3.240\nMP5 — $2.400\nEscopeta — $2.400\nDeagle — $2.400\nTec-9 — $2.000\nUzi — $2.000'
           },
           {
-            name: '⚔️ Armas Disponibles',
+            name: 'PACKS',
             value:
-              'AK-47 — $3.240\n' +
-              'MP5 — $2.400\n' +
-              'Escopeta — $2.400\n' +
-              'Deagle — $2.400\n' +
-              'Tec-9 — $2.000\n' +
-              'Uzi — $2.000',
-          },
-          {
-            name: '📦 Packs',
-            value:
-              'Corto–Medio — $4.500\n' +
-              'Medio I — $4.400\n' +
-              'Medio II — $4.000\n' +
-              'Medio III — $4.000\n' +
-              'Full I — $20.000\n' +
-              'Full II — $10.000',
+              'Corto–Medio — $4.500\nMedio I — $4.400\nMedio II — $4.000\nMedio III — $4.000\nFull I — $20.000\nFull II — $10.000'
           }
-        )
-        .setFooter({ text: 'Usa /pago o /pack para calcular' });
+        );
 
       return interaction.editReply({ embeds: [embed] });
     }
 
-    // 💰 PAGO
+    // PAGO
     if (interaction.commandName === 'pago') {
 
       await interaction.deferReply();
@@ -149,29 +130,24 @@ client.on('interactionCreate', async interaction => {
 
       for (let arma of armas) {
         if (!arma) continue;
-
         arma = arma.toLowerCase();
 
         if (precios[arma]) {
           total += precios[arma];
-          lista.push(`• ${arma.toUpperCase()} — $${precios[arma]}`);
+          lista.push(`${arma.toUpperCase()} — $${precios[arma]}`);
         }
       }
 
       const embed = new EmbedBuilder()
-        .setTitle('💰 RESUMEN DE COMPRA')
+        .setTitle('RESUMEN DE COMPRA')
         .setColor(0x2b2d31)
-        .setDescription(lista.join('\n') || 'Sin armas válidas')
-        .addFields({
-          name: '💵 Total a pagar',
-          value: `$${total}`,
-        })
-        .setFooter({ text: 'Usa /donar y envía comprobante' });
+        .setDescription(lista.join('\n') || 'Sin armas')
+        .addFields({ name: 'TOTAL', value: `$${total}` });
 
       return interaction.editReply({ embeds: [embed] });
     }
 
-    // 📦 PACK
+    // PACK
     if (interaction.commandName === 'pack') {
 
       await interaction.deferReply();
@@ -180,25 +156,23 @@ client.on('interactionCreate', async interaction => {
       const pack = packs[tipo];
 
       const embed = new EmbedBuilder()
-        .setTitle('📦 PACK SELECCIONADO')
+        .setTitle('PACK SELECCIONADO')
         .setColor(0x2b2d31)
         .addFields(
-          { name: 'Tipo', value: pack.nombre },
-          { name: 'Armas', value: pack.armas.join(', ') },
-          { name: 'Total', value: `$${pack.total}` }
-        )
-        .setFooter({ text: 'Usa /donar para completar la compra' });
+          { name: 'TIPO', value: pack.nombre },
+          { name: 'ARMAS', value: pack.armas.join(', ') },
+          { name: 'TOTAL', value: `$${pack.total}` }
+        );
 
       return interaction.editReply({ embeds: [embed] });
     }
 
-  } catch (error) {
-    console.error(error);
-
+  } catch (err) {
+    console.error(err);
     if (interaction.deferred) {
-      interaction.editReply('Ocurrió un error.');
+      interaction.editReply('Error.');
     } else {
-      interaction.reply({ content: 'Error inesperado.', ephemeral: true });
+      interaction.reply({ content: 'Error.', ephemeral: true });
     }
   }
 });
