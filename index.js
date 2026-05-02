@@ -1,7 +1,6 @@
 const express = require('express');
 const app = express();
 
-// KEEP ALIVE
 app.get('/', (req, res) => {
   res.send('Bot activo');
 });
@@ -19,14 +18,14 @@ const client = new Client({
   ]
 });
 
-// 🔑 CONFIG
+// CONFIG
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = '1499918194209460275';
 const GUILD_ID = '1123790874741047356';
 const rolID = '1249140217663979622';
 const canalID = '1249140780493443072';
 
-// 💰 PRECIOS
+// PRECIOS
 const precios = {
   m4: 20000,
   ak47: 3240,
@@ -37,7 +36,7 @@ const precios = {
   uzi: 2000
 };
 
-// 📦 COMANDOS
+// COMANDOS
 const commands = [
   new SlashCommandBuilder()
     .setName('armamento')
@@ -61,7 +60,7 @@ const commands = [
     .addAttachmentOption(option => option.setName('imagen').setDescription('Captura').setRequired(true))
 ].map(cmd => cmd.toJSON());
 
-// 📡 REGISTRAR
+// REGISTRAR
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 (async () => {
@@ -84,12 +83,11 @@ client.on('ready', () => {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  // 🔒 PERMISO
   if (!interaction.member.roles.cache.has(rolID)) {
     return interaction.reply({ content: 'No tienes permiso', ephemeral: true });
   }
 
-  // 📦 ARMAMENTO
+  // ARMAMENTO
   if (interaction.commandName === 'armamento') {
     const embed = new EmbedBuilder()
       .setTitle('Catálogo de Armamento')
@@ -102,9 +100,8 @@ client.on('interactionCreate', async interaction => {
     return interaction.reply({ embeds: [embed] });
   }
 
-  // 💰 PAGO
+  // PAGO
   if (interaction.commandName === 'pago') {
-
     const armas = [
       interaction.options.getString('arma1'),
       interaction.options.getString('arma2'),
@@ -118,7 +115,6 @@ client.on('interactionCreate', async interaction => {
 
     for (let arma of armas) {
       if (!arma) continue;
-
       arma = arma.toLowerCase();
 
       if (precios[arma]) {
@@ -128,11 +124,11 @@ client.on('interactionCreate', async interaction => {
     }
 
     return interaction.reply(
-      `Armas: ${usadas.join(', ')}\nTotal: $${total}\n\nUsa /donar y envía comprobante`
+      `Armas: ${usadas.join(', ')}\nTotal: $${total}`
     );
   }
 
-  // 📄 REGISTRO (FIX DEFINITIVO)
+  // REGISTRO
   if (interaction.commandName === 'registro') {
 
     await interaction.deferReply({ ephemeral: true });
@@ -143,19 +139,22 @@ client.on('interactionCreate', async interaction => {
       const arma = interaction.options.getString('arma');
       const imagen = interaction.options.getAttachment('imagen');
 
+      console.log('Canal ID:', canalID);
+
       if (!imagen) {
         return interaction.editReply('Debes subir una imagen.');
       }
 
       const canal = interaction.guild.channels.cache.get(canalID);
 
+      console.log('Canal encontrado:', canal);
+
       if (!canal) {
-        return interaction.editReply('No se encontró el canal. Verifica el ID.');
+        return interaction.editReply('Canal no encontrado.');
       }
 
       const embed = new EmbedBuilder()
         .setTitle('📄 Comprobante de Compra')
-        .setColor(0xffffff)
         .addFields(
           { name: 'Vendedor', value: vendedor },
           { name: 'Comprador', value: comprador },
@@ -168,8 +167,8 @@ client.on('interactionCreate', async interaction => {
       await interaction.editReply('Comprobante enviado correctamente');
 
     } catch (error) {
-      console.error(error);
-      await interaction.editReply('Error al enviar el comprobante.');
+      console.error('ERROR REGISTRO:', error);
+      await interaction.editReply('Error: ' + error.message);
     }
   }
 });
