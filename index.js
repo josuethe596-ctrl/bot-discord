@@ -25,24 +25,23 @@ const precios = {
 
 // ===== PACKS =====
 const packs = {
-  corto: { nombre: 'Pack Corto–Medio Alcance', total: 4500 },
-  medio1: { nombre: 'Pack Medio Alcance I', total: 4400 },
-  medio2: { nombre: 'Pack Medio Alcance II', total: 4000 },
-  medio3: { nombre: 'Pack Medio Alcance III', total: 4000 },
-  full1: { nombre: 'Full Pack I', total: 20000 },
-  full2: { nombre: 'Full Pack II', total: 10000 }
+  corto: { nombre: 'Corto–Medio', total: 4500 },
+  medio1: { nombre: 'Medio I', total: 4400 },
+  medio2: { nombre: 'Medio II', total: 4000 },
+  medio3: { nombre: 'Medio III', total: 4000 },
+  full1: { nombre: 'Full I', total: 20000 },
+  full2: { nombre: 'Full II', total: 10000 }
 };
 
 // ===== COMANDOS =====
 const commands = [
-
   new SlashCommandBuilder()
     .setName('armamento')
-    .setDescription('Ver catálogo de armamento'),
+    .setDescription('Ver armamento'),
 
   new SlashCommandBuilder()
     .setName('pago')
-    .setDescription('Calcular total de armas')
+    .setDescription('Calcular pago')
     .addStringOption(o => o.setName('arma1').setDescription('Arma 1').setRequired(true))
     .addStringOption(o => o.setName('arma2').setDescription('Arma 2'))
     .addStringOption(o => o.setName('arma3').setDescription('Arma 3'))
@@ -68,24 +67,33 @@ const commands = [
   new SlashCommandBuilder()
     .setName('registro')
     .setDescription('Registrar venta')
-    .addStringOption(o => o.setName('vendedor').setDescription('Nombre del vendedor').setRequired(true))
-    .addStringOption(o => o.setName('comprador').setDescription('Nombre del comprador').setRequired(true))
-    .addStringOption(o => o.setName('arma').setDescription('Arma vendida').setRequired(true))
+    .addStringOption(o => o.setName('vendedor').setDescription('Vendedor').setRequired(true))
+    .addStringOption(o => o.setName('comprador').setDescription('Comprador').setRequired(true))
+    .addStringOption(o => o.setName('arma').setDescription('Arma').setRequired(true))
     .addStringOption(o => o.setName('precio').setDescription('Precio').setRequired(true))
     .addAttachmentOption(o => o.setName('imagen').setDescription('Comprobante').setRequired(true))
-
 ].map(c => c.toJSON());
 
-// ===== REGISTRAR =====
+// ===== REGISTRO =====
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 client.once('clientReady', async () => {
   console.log('Bot listo');
 
-  await rest.put(
-    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-    { body: commands }
-  );
+  try {
+    // limpiar comandos viejos
+    await rest.put(Routes.applicationCommands(CLIENT_ID), { body: [] });
+
+    // registrar nuevos
+    await rest.put(
+      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+      { body: commands }
+    );
+
+    console.log('Comandos registrados correctamente');
+  } catch (error) {
+    console.error('Error registrando:', error);
+  }
 });
 
 // ===== INTERACCIONES =====
@@ -101,37 +109,13 @@ client.on('interactionCreate', async interaction => {
           new EmbedBuilder()
             .setColor(0x2b2d31)
             .setTitle('Armamento')
-            .setDescription(
-`M4
-Precio: $20.000
-
-Disponible solo para PVT oficiales
-
-Armas disponibles para todo el personal
-
-AK-47 — $3.240
-MP5 — $2.400
-Escopeta — $2.400
-Desert Eagle — $2.400
-Tec-9 — $2.000
-Uzi — $2.000
-
-Packs disponibles
-
-Corto–Medio — $4.500
-Medio I — $4.400
-Medio II — $4.000
-Medio III — $4.000
-Full I — $20.000
-Full II — $10.000`
-            )
+            .setDescription('Usa /pago o /pack para calcular compras.')
         ]
       });
     }
 
     // ===== PAGO =====
     if (interaction.commandName === 'pago') {
-
       let total = 0;
 
       const armas = [
@@ -147,27 +131,24 @@ Full II — $10.000`
         if (precios[arma]) total += precios[arma];
       }
 
-      return interaction.reply({
-        content:
-`Total a pagar: $${total}
+      return interaction.reply(
+`Total: $${total}
 
 Debes pagar en la caja fuerte /donar y pasar comprobante`
-      });
+      );
     }
 
     // ===== PACK =====
     if (interaction.commandName === 'pack') {
-
       const tipo = interaction.options.getString('tipo');
       const pack = packs[tipo];
 
-      return interaction.reply({
-        content:
+      return interaction.reply(
 `${pack.nombre}
 Total: $${pack.total}
 
 Debes pagar en la caja fuerte /donar y pasar comprobante`
-      });
+      );
     }
 
     // ===== REGISTRO =====
@@ -192,27 +173,22 @@ Comprador: ${comprador}
 Fecha: ${fecha}`;
 
       const canal = await client.channels.fetch(CANAL_REGISTRO).catch(() => null);
-      if (canal) {
-        await canal.send({
-          content: mensaje,
-          files: [imagen.url]
-        });
-      }
+      if (canal) await canal.send({ content: mensaje, files: [imagen.url] });
 
       const hilo = await client.channels.fetch(HILO_EXTERNO).catch(() => null);
-      if (hilo) {
-        await hilo.send({
-          content: mensaje,
-          files: [imagen.url]
-        });
-      }
+      if (hilo) await hilo.send({ content: mensaje, files: [imagen.url] });
 
       return interaction.editReply('Registro enviado correctamente.');
     }
 
   } catch (error) {
     console.error(error);
-    return interaction.reply({ content: 'Error en el comando.', ephemeral: true });
+
+    if (interaction.deferred) {
+      interaction.editReply('Error.');
+    } else {
+      interaction.reply({ content: 'Error.', ephemeral: true });
+    }
   }
 });
 
