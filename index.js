@@ -10,6 +10,9 @@ const CLIENT_ID = '1500242491071402144';
 const GUILD_ID = '1123790874741047356';
 const CANAL_REGISTRO = '1249140780493443072';
 
+// ===== COLOR ROJO =====
+const COLOR = 0xff0000;
+
 // ===== PRECIOS =====
 const precios = {
   m4: 20000,
@@ -23,19 +26,41 @@ const precios = {
 
 // ===== PACKS =====
 const packs = {
-  corto: { nombre: 'Pack Corto–Medio Alcance', total: 4500 },
-  medio1: { nombre: 'Pack Medio Alcance I', total: 4400 },
-  medio2: { nombre: 'Pack Medio Alcance II', total: 4000 },
-  medio3: { nombre: 'Pack Medio Alcance III', total: 4000 },
-  full1: { nombre: 'Full Pack I', total: 20000 },
-  full2: { nombre: 'Full Pack II', total: 10000 }
+  corto: {
+    nombre: 'Pack Corto–Medio Alcance',
+    armas: ['Desert Eagle', 'Escopeta'],
+    total: 4500
+  },
+  medio1: {
+    nombre: 'Pack Medio Alcance I',
+    armas: ['MP5', 'Escopeta'],
+    total: 4400
+  },
+  medio2: {
+    nombre: 'Pack Medio Alcance II',
+    armas: ['Tec-9', 'Escopeta'],
+    total: 4000
+  },
+  medio3: {
+    nombre: 'Pack Medio Alcance III',
+    armas: ['Uzi', 'Escopeta'],
+    total: 4000
+  },
+  full1: {
+    nombre: 'Full Pack I',
+    armas: ['M4', 'Desert Eagle', 'MP5', 'Escopeta'],
+    total: 20000
+  },
+  full2: {
+    nombre: 'Full Pack II',
+    armas: ['AK-47', 'Desert Eagle', 'Tec-9', 'Escopeta'],
+    total: 10000
+  }
 };
 
 // ===== COMANDOS =====
 const commands = [
-  new SlashCommandBuilder()
-    .setName('armamento')
-    .setDescription('Ver catálogo de armamento'),
+  new SlashCommandBuilder().setName('armamento').setDescription('Ver catálogo'),
 
   new SlashCommandBuilder()
     .setName('pago')
@@ -79,15 +104,10 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 client.once('clientReady', async () => {
   console.log('Bot listo');
 
-  try {
-    await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-      { body: commands }
-    );
-    console.log('Comandos cargados');
-  } catch (err) {
-    console.error('Error registrando:', err);
-  }
+  await rest.put(
+    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+    { body: commands }
+  );
 });
 
 // ===== INTERACCIONES =====
@@ -101,24 +121,32 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({
         embeds: [
           new EmbedBuilder()
-            .setColor(0x1e1f22)
+            .setColor(COLOR)
             .setTitle('Catálogo de Armamento')
             .setDescription(`Se comunica a todo el personal del **United States Marine Corps** el armamento disponible.
 
 **M4**
-Disponibilidad: Desde <@&1249078539135877169> en adelante
 Precio: $20.000
 
 --------
-
-Armas disponibles para todo el personal <@&1249089172308885576>
 
 AK-47 — $3.240
 MP5 — $2.400
 Escopeta — $2.400
 Desert Eagle — $2.400
 Tec-9 — $2.000
-Uzi — $2.000`)
+Uzi — $2.000
+
+--------
+
+Packs disponibles
+
+Corto–Medio: Desert Eagle, Escopeta ($4.500)
+Medio I: MP5, Escopeta ($4.400)
+Medio II: Tec-9, Escopeta ($4.000)
+Medio III: Uzi, Escopeta ($4.000)
+Full I: M4, Desert Eagle, MP5, Escopeta ($20.000)
+Full II: AK-47, Desert Eagle, Tec-9, Escopeta ($10.000)`)
         ]
       });
     }
@@ -148,10 +176,11 @@ Uzi — $2.000`)
       return interaction.reply({
         embeds: [
           new EmbedBuilder()
-            .setColor(0x1e1f22)
+            .setColor(COLOR)
             .setTitle('Resumen de Compra')
             .setDescription(lista.join('\n') || 'Sin armas')
             .addFields({ name: 'Total', value: `$${total}` })
+            .setFooter({ text: 'Debes pagar en la caja fuerte /donar y pasar comprobante' })
         ]
       });
     }
@@ -164,9 +193,11 @@ Uzi — $2.000`)
       return interaction.reply({
         embeds: [
           new EmbedBuilder()
-            .setColor(0x1e1f22)
+            .setColor(COLOR)
             .setTitle(pack.nombre)
+            .setDescription(pack.armas.join('\n'))
             .addFields({ name: 'Total', value: `$${pack.total}` })
+            .setFooter({ text: 'Debes pagar en la caja fuerte /donar y pasar comprobante' })
         ]
       });
     }
@@ -182,8 +213,8 @@ Uzi — $2.000`)
       const precio = interaction.options.getString('precio');
       const imagen = interaction.options.getAttachment('imagen');
 
-      if (!imagen || !imagen.url) {
-        return interaction.editReply('Debes subir una imagen válida.');
+      if (!imagen) {
+        return interaction.editReply('Debes subir una imagen.');
       }
 
       const mensaje =
@@ -193,17 +224,13 @@ Venta realizada: ${arma}
 Vendedor: ${vendedor}
 Comprador: ${comprador}`;
 
-      try {
-        const canal = await client.channels.fetch(CANAL_REGISTRO);
+      const canal = await client.channels.fetch(CANAL_REGISTRO).catch(() => null);
 
+      if (canal) {
         await canal.send({
           content: mensaje,
           files: [{ attachment: imagen.url }]
         });
-
-      } catch (err) {
-        console.error('ERROR CANAL:', err.message);
-        return interaction.editReply('Error: revisa permisos del bot o ID del canal.');
       }
 
       return interaction.editReply('Registro enviado correctamente.');
@@ -211,7 +238,7 @@ Comprador: ${comprador}`;
 
   } catch (error) {
     console.error(error);
-    return interaction.reply({ content: 'Error general.', ephemeral: true });
+    return interaction.reply({ content: 'Error.', ephemeral: true });
   }
 });
 
