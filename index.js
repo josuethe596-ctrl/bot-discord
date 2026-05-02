@@ -61,7 +61,7 @@ const commands = [
     .addAttachmentOption(option => option.setName('imagen').setDescription('Captura').setRequired(true))
 ].map(cmd => cmd.toJSON());
 
-// 📡 REGISTRAR COMANDOS
+// 📡 REGISTRAR
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 (async () => {
@@ -132,7 +132,7 @@ client.on('interactionCreate', async interaction => {
     );
   }
 
-  // 📄 REGISTRO (FIX COMPLETO)
+  // 📄 REGISTRO (FIX DEFINITIVO)
   if (interaction.commandName === 'registro') {
 
     await interaction.deferReply({ ephemeral: true });
@@ -147,10 +147,10 @@ client.on('interactionCreate', async interaction => {
         return interaction.editReply('Debes subir una imagen.');
       }
 
-      const canal = await client.channels.fetch(canalID);
+      const canal = interaction.guild.channels.cache.get(canalID);
 
       if (!canal) {
-        return interaction.editReply('Canal no encontrado');
+        return interaction.editReply('No se encontró el canal. Verifica el ID.');
       }
 
       const embed = new EmbedBuilder()
@@ -169,7 +169,7 @@ client.on('interactionCreate', async interaction => {
 
     } catch (error) {
       console.error(error);
-      await interaction.editReply('Ocurrió un error al enviar el comprobante.');
+      await interaction.editReply('Error al enviar el comprobante.');
     }
   }
 });
