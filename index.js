@@ -4,7 +4,6 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
-// 🔑 CONFIG
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = '1499955518725423244';
 const GUILD_ID = '1488371938265923705';
@@ -31,24 +30,28 @@ const packs = {
   full2: { nombre: 'Full II', armas: ['AK-47', 'Deagle', 'Tec-9', 'Escopeta'], total: 10000 }
 };
 
-// 📦 COMANDOS
+// 📦 COMANDOS (ARREGLADOS)
 const commands = [
-  new SlashCommandBuilder().setName('armamento').setDescription('Ver catálogo'),
+
+  new SlashCommandBuilder()
+    .setName('armamento')
+    .setDescription('Ver catálogo de armas'),
 
   new SlashCommandBuilder()
     .setName('pago')
-    .setDescription('Calcular total')
-    .addStringOption(o => o.setName('arma1').setRequired(true))
-    .addStringOption(o => o.setName('arma2'))
-    .addStringOption(o => o.setName('arma3'))
-    .addStringOption(o => o.setName('arma4'))
-    .addStringOption(o => o.setName('arma5')),
+    .setDescription('Calcular total de armas')
+    .addStringOption(o => o.setName('arma1').setDescription('Arma 1').setRequired(true))
+    .addStringOption(o => o.setName('arma2').setDescription('Arma 2'))
+    .addStringOption(o => o.setName('arma3').setDescription('Arma 3'))
+    .addStringOption(o => o.setName('arma4').setDescription('Arma 4'))
+    .addStringOption(o => o.setName('arma5').setDescription('Arma 5')),
 
   new SlashCommandBuilder()
     .setName('pack')
-    .setDescription('Ver pack')
+    .setDescription('Ver precio de pack')
     .addStringOption(option =>
       option.setName('tipo')
+        .setDescription('Tipo de pack') // 🔥 ESTA LÍNEA ERA CLAVE
         .setRequired(true)
         .addChoices(
           { name: 'Corto–Medio', value: 'corto' },
@@ -59,6 +62,7 @@ const commands = [
           { name: 'Full II', value: 'full2' }
         )
     )
+
 ].map(c => c.toJSON());
 
 // 📡 REGISTRO
@@ -67,29 +71,25 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 client.once('ready', async () => {
   console.log(`Bot listo como ${client.user.tag}`);
 
-  try {
-    await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-      { body: commands }
-    );
-    console.log('Comandos registrados');
-  } catch (err) {
-    console.error(err);
-  }
+  await rest.put(
+    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+    { body: commands }
+  );
+
+  console.log('Comandos registrados');
 });
 
 // 🎮 INTERACCIONES
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
+  if (!interaction.member.roles.cache.has(ROL_ID)) {
+    return interaction.reply({ content: 'No tienes permiso.', ephemeral: true });
+  }
+
   try {
 
-    // 🔒 ROL
-    if (!interaction.member.roles.cache.has(ROL_ID)) {
-      return interaction.reply({ content: 'No tienes permiso.', ephemeral: true });
-    }
-
-    // 📦 ARMAMENTO
+    // ARMAMENTO
     if (interaction.commandName === 'armamento') {
 
       await interaction.deferReply();
@@ -98,33 +98,18 @@ client.on('interactionCreate', async interaction => {
         .setTitle('📦 Catálogo de Armamento')
         .setColor(0xffffff)
         .addFields(
-          { name: 'M4', value: '💰 $20.000' },
+          { name: 'M4', value: '$20.000' },
           {
             name: 'Armas',
             value:
-              'AK-47 — $3.240\n' +
-              'MP5 — $2.400\n' +
-              'Escopeta — $2.400\n' +
-              'Deagle — $2.400\n' +
-              'Tec-9 — $2.000\n' +
-              'Uzi — $2.000'
-          },
-          {
-            name: 'Packs',
-            value:
-              'Corto–Medio — $4.500\n' +
-              'Medio I — $4.400\n' +
-              'Medio II — $4.000\n' +
-              'Medio III — $4.000\n' +
-              'Full I — $20.000\n' +
-              'Full II — $10.000'
+              'AK-47 — $3.240\nMP5 — $2.400\nEscopeta — $2.400\nDeagle — $2.400\nTec-9 — $2.000\nUzi — $2.000'
           }
         );
 
       return interaction.editReply({ embeds: [embed] });
     }
 
-    // 💰 PAGO
+    // PAGO
     if (interaction.commandName === 'pago') {
 
       await interaction.deferReply();
@@ -142,7 +127,6 @@ client.on('interactionCreate', async interaction => {
 
       for (let arma of armas) {
         if (!arma) continue;
-
         arma = arma.toLowerCase();
 
         if (precios[arma]) {
@@ -151,12 +135,10 @@ client.on('interactionCreate', async interaction => {
         }
       }
 
-      return interaction.editReply(
-        `Armas: ${usadas.join(', ')}\n💰 Total: $${total}`
-      );
+      return interaction.editReply(`Armas: ${usadas.join(', ')}\nTotal: $${total}`);
     }
 
-    // 📦 PACK
+    // PACK
     if (interaction.commandName === 'pack') {
 
       await interaction.deferReply();
@@ -164,22 +146,18 @@ client.on('interactionCreate', async interaction => {
       const tipo = interaction.options.getString('tipo');
       const pack = packs[tipo];
 
-      if (!pack) {
-        return interaction.editReply('Pack no válido.');
-      }
-
       return interaction.editReply(
-        `📦 ${pack.nombre}\nArmas: ${pack.armas.join(', ')}\n💰 Total: $${pack.total}`
+        `📦 ${pack.nombre}\nArmas: ${pack.armas.join(', ')}\nTotal: $${pack.total}`
       );
     }
 
-  } catch (error) {
-    console.error(error);
+  } catch (err) {
+    console.error(err);
 
     if (interaction.deferred) {
-      interaction.editReply('Ocurrió un error.');
+      interaction.editReply('Error.');
     } else {
-      interaction.reply({ content: 'Error inesperado.', ephemeral: true });
+      interaction.reply({ content: 'Error.', ephemeral: true });
     }
   }
 });
