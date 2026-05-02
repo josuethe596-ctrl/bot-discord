@@ -41,11 +41,11 @@ const precios = {
 const commands = [
   new SlashCommandBuilder()
     .setName('armamento')
-    .setDescription('Ver catálogo de armamento'),
+    .setDescription('Ver catálogo'),
 
   new SlashCommandBuilder()
     .setName('pago')
-    .setDescription('Calcular total de armas')
+    .setDescription('Calcular total')
     .addStringOption(option => option.setName('arma1').setDescription('Arma 1').setRequired(true))
     .addStringOption(option => option.setName('arma2').setDescription('Arma 2'))
     .addStringOption(option => option.setName('arma3').setDescription('Arma 3'))
@@ -61,7 +61,7 @@ const commands = [
     .addAttachmentOption(option => option.setName('imagen').setDescription('Captura').setRequired(true))
 ].map(cmd => cmd.toJSON());
 
-// 📡 REGISTRAR
+// 📡 REGISTRAR COMANDOS
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 (async () => {
@@ -132,33 +132,45 @@ client.on('interactionCreate', async interaction => {
     );
   }
 
-  // 📄 REGISTRO (FIXED)
+  // 📄 REGISTRO (FIX COMPLETO)
   if (interaction.commandName === 'registro') {
 
     await interaction.deferReply({ ephemeral: true });
 
-    const vendedor = interaction.options.getString('vendedor');
-    const comprador = interaction.options.getString('comprador');
-    const arma = interaction.options.getString('arma');
-    const imagen = interaction.options.getAttachment('imagen');
+    try {
+      const vendedor = interaction.options.getString('vendedor');
+      const comprador = interaction.options.getString('comprador');
+      const arma = interaction.options.getString('arma');
+      const imagen = interaction.options.getAttachment('imagen');
 
-    const canal = client.channels.cache.get(canalID);
+      if (!imagen) {
+        return interaction.editReply('Debes subir una imagen.');
+      }
 
-    if (!canal) {
-      return interaction.editReply('Canal no encontrado');
+      const canal = await client.channels.fetch(canalID);
+
+      if (!canal) {
+        return interaction.editReply('Canal no encontrado');
+      }
+
+      const embed = new EmbedBuilder()
+        .setTitle('📄 Comprobante de Compra')
+        .setColor(0xffffff)
+        .addFields(
+          { name: 'Vendedor', value: vendedor },
+          { name: 'Comprador', value: comprador },
+          { name: 'Arma', value: arma }
+        )
+        .setImage(imagen.url);
+
+      await canal.send({ embeds: [embed] });
+
+      await interaction.editReply('Comprobante enviado correctamente');
+
+    } catch (error) {
+      console.error(error);
+      await interaction.editReply('Ocurrió un error al enviar el comprobante.');
     }
-
-    await canal.send({
-      content:
-`📄 COMPROBANTE DE COMPRA
-
-Vendedor: ${vendedor}
-Comprador: ${comprador}
-Arma: ${arma}`,
-      files: [imagen.url]
-    });
-
-    await interaction.editReply('Comprobante enviado correctamente');
   }
 });
 
