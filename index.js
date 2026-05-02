@@ -79,10 +79,15 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 client.once('clientReady', async () => {
   console.log('Bot listo');
 
-  await rest.put(
-    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-    { body: commands }
-  );
+  try {
+    await rest.put(
+      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+      { body: commands }
+    );
+    console.log('Comandos cargados');
+  } catch (err) {
+    console.error('Error registrando:', err);
+  }
 });
 
 // ===== INTERACCIONES =====
@@ -113,18 +118,7 @@ MP5 — $2.400
 Escopeta — $2.400
 Desert Eagle — $2.400
 Tec-9 — $2.000
-Uzi — $2.000
-
---------
-
-Packs disponibles
-
-Corto–Medio — $4.500
-Medio I — $4.400
-Medio II — $4.000
-Medio III — $4.000
-Full I — $20.000
-Full II — $10.000`)
+Uzi — $2.000`)
         ]
       });
     }
@@ -158,7 +152,6 @@ Full II — $10.000`)
             .setTitle('Resumen de Compra')
             .setDescription(lista.join('\n') || 'Sin armas')
             .addFields({ name: 'Total', value: `$${total}` })
-            .setFooter({ text: 'Debes pagar en la caja fuerte /donar y pasar comprobante' })
         ]
       });
     }
@@ -174,7 +167,6 @@ Full II — $10.000`)
             .setColor(0x1e1f22)
             .setTitle(pack.nombre)
             .addFields({ name: 'Total', value: `$${pack.total}` })
-            .setFooter({ text: 'Debes pagar en la caja fuerte /donar y pasar comprobante' })
         ]
       });
     }
@@ -184,52 +176,42 @@ Full II — $10.000`)
 
       await interaction.deferReply({ ephemeral: true });
 
-      try {
-        const vendedor = interaction.options.getString('vendedor');
-        const comprador = interaction.options.getString('comprador');
-        const arma = interaction.options.getString('arma');
-        const precio = interaction.options.getString('precio');
-        const imagen = interaction.options.getAttachment('imagen');
+      const vendedor = interaction.options.getString('vendedor');
+      const comprador = interaction.options.getString('comprador');
+      const arma = interaction.options.getString('arma');
+      const precio = interaction.options.getString('precio');
+      const imagen = interaction.options.getAttachment('imagen');
 
-        if (!imagen) {
-          return interaction.editReply('Debes adjuntar una imagen válida.');
-        }
+      if (!imagen || !imagen.url) {
+        return interaction.editReply('Debes subir una imagen válida.');
+      }
 
-        const fecha = new Date().toLocaleDateString();
-
-        const mensaje =
+      const mensaje =
 `Registro
 Dinero recibido: $${precio}
 Venta realizada: ${arma}
 Vendedor: ${vendedor}
-Comprador: ${comprador}
-Fecha: ${fecha}`;
+Comprador: ${comprador}`;
 
-        const canal = await client.channels.fetch(CANAL_REGISTRO).catch(() => null);
+      try {
+        const canal = await client.channels.fetch(CANAL_REGISTRO);
 
-        if (canal) {
-          await canal.send({
-            content: mensaje,
-            files: [{ attachment: imagen.url }]
-          });
-        }
-
-        return interaction.editReply('Registro enviado correctamente.');
+        await canal.send({
+          content: mensaje,
+          files: [{ attachment: imagen.url }]
+        });
 
       } catch (err) {
-        console.error(err);
-        return interaction.editReply('Error al procesar el registro.');
+        console.error('ERROR CANAL:', err.message);
+        return interaction.editReply('Error: revisa permisos del bot o ID del canal.');
       }
+
+      return interaction.editReply('Registro enviado correctamente.');
     }
 
   } catch (error) {
     console.error(error);
-
-    if (interaction.deferred) {
-      interaction.editReply('Error.');
-    } else {
-      interaction.reply({ content: 'Error.', ephemeral: true });
-    }
+    return interaction.reply({ content: 'Error general.', ephemeral: true });
   }
 });
 
