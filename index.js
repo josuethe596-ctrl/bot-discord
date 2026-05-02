@@ -69,7 +69,15 @@ const commands = [
     .addStringOption(o => o.setName('vendedor').setDescription('Vendedor').setRequired(true))
     .addStringOption(o => o.setName('comprador').setDescription('Comprador').setRequired(true))
     .addStringOption(o => o.setName('arma').setDescription('Arma').setRequired(true))
-    .addAttachmentOption(o => o.setName('imagen').setDescription('Imagen').setRequired(true))
+    .addAttachmentOption(o => o.setName('imagen').setDescription('Imagen').setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName('factura')
+    .setDescription('Enviar factura al privado')
+    .addUserOption(o => o.setName('usuario').setDescription('Cliente').setRequired(true))
+    .addStringOption(o => o.setName('producto').setDescription('Producto').setRequired(true))
+    .addStringOption(o => o.setName('precio').setDescription('Precio total').setRequired(true))
+    .addStringOption(o => o.setName('metodo').setDescription('Metodo de pago').setRequired(true))
 ].map(c => c.toJSON());
 
 // ===== REGISTRO =====
@@ -94,7 +102,6 @@ client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   try {
-    // Verificar rol
     if (!interaction.member.roles.cache.has(ROL_ID)) {
       return interaction.reply({ content: 'No tienes permiso.', ephemeral: true });
     }
@@ -154,10 +161,7 @@ client.on('interactionCreate', async interaction => {
             .setDescription(lista.join('\n') || 'Sin armas')
             .addFields(
               { name: 'TOTAL', value: `$${total}` },
-              {
-                name: 'INSTRUCCIONES',
-                value: 'Debes donar usando /donar y enviar comprobante.'
-              }
+              { name: 'INSTRUCCIONES', value: 'Debes donar y enviar comprobante.' }
             )
         ]
       });
@@ -195,14 +199,7 @@ client.on('interactionCreate', async interaction => {
       const arma = interaction.options.getString('arma');
       const imagen = interaction.options.getAttachment('imagen');
 
-      if (!imagen) {
-        return interaction.editReply('Debes subir una imagen.');
-      }
-
       const canal = interaction.guild.channels.cache.get(CANAL_REGISTRO);
-      if (!canal) {
-        return interaction.editReply('Canal no encontrado.');
-      }
 
       await canal.send({
         embeds: [
@@ -221,16 +218,44 @@ client.on('interactionCreate', async interaction => {
       return interaction.editReply('Comprobante enviado correctamente');
     }
 
+    // ===== FACTURA =====
+    if (interaction.commandName === 'factura') {
+      await interaction.deferReply({ ephemeral: true });
+
+      const usuario = interaction.options.getUser('usuario');
+      const producto = interaction.options.getString('producto');
+      const precio = interaction.options.getString('precio');
+      const metodo = interaction.options.getString('metodo');
+
+      const embed = new EmbedBuilder()
+        .setTitle('FACTURA')
+        .setColor(0x2b2d31)
+        .addFields(
+          { name: 'CLIENTE', value: usuario.username },
+          { name: 'PRODUCTO', value: producto },
+          { name: 'TOTAL', value: `$${precio}` },
+          { name: 'METODO', value: metodo },
+          { name: 'FECHA', value: new Date().toLocaleString() }
+        );
+
+      try {
+        await usuario.send({ embeds: [embed] });
+      } catch {
+        return interaction.editReply('No se pudo enviar al privado.');
+      }
+
+      return interaction.editReply('Factura enviada.');
+    }
+
   } catch (error) {
-    console.error('ERROR GENERAL:', error);
+    console.error(error);
 
     if (interaction.deferred) {
-      interaction.editReply('Ocurrió un error.');
+      interaction.editReply('Error.');
     } else {
-      interaction.reply({ content: 'Error inesperado.', ephemeral: true });
+      interaction.reply({ content: 'Error.', ephemeral: true });
     }
   }
 });
 
-// ===== INICIAR =====
 client.login(TOKEN);
