@@ -6,33 +6,53 @@ const client = new Client({
 
 // ===== CONFIG =====
 const TOKEN = process.env.TOKEN;
-const CLIENT_ID = '1499955518725423244';
-const GUILD_ID = '1488371938265923705';
-const ROL_ID = '1249140217663979622';
+const CLIENT_ID = '1500242491071402144';
+const GUILD_ID = '1123790874741047356';
+
 const CANAL_REGISTRO = '1249140780493443072';
 const HILO_EXTERNO = '1477760530125947183';
 
+// ===== PRECIOS =====
+const precios = {
+  m4: 20000,
+  ak47: 3240,
+  mp5: 2400,
+  escopeta: 2400,
+  deagle: 2400,
+  tec9: 2000,
+  uzi: 2000
+};
+
+// ===== PACKS =====
+const packs = {
+  corto: { nombre: 'Pack Corto–Medio Alcance', total: 4500 },
+  medio1: { nombre: 'Pack Medio Alcance I', total: 4400 },
+  medio2: { nombre: 'Pack Medio Alcance II', total: 4000 },
+  medio3: { nombre: 'Pack Medio Alcance III', total: 4000 },
+  full1: { nombre: 'Full Pack I', total: 20000 },
+  full2: { nombre: 'Full Pack II', total: 10000 }
+};
+
 // ===== COMANDOS =====
 const commands = [
+
   new SlashCommandBuilder()
     .setName('armamento')
-    .setDescription('Catalogo de armas'),
+    .setDescription('Ver catálogo de armamento'),
 
   new SlashCommandBuilder()
     .setName('pago')
-    .setDescription('Calcular total')
-    .addStringOption(o => o.setName('arma1').setDescription('Arma 1').setRequired(true))
-    .addStringOption(o => o.setName('arma2').setDescription('Arma 2'))
-    .addStringOption(o => o.setName('arma3').setDescription('Arma 3'))
-    .addStringOption(o => o.setName('arma4').setDescription('Arma 4'))
-    .addStringOption(o => o.setName('arma5').setDescription('Arma 5')),
+    .setDescription('Calcular total de armas')
+    .addStringOption(o => o.setName('arma1').setRequired(true))
+    .addStringOption(o => o.setName('arma2'))
+    .addStringOption(o => o.setName('arma3'))
+    .addStringOption(o => o.setName('arma4')),
 
   new SlashCommandBuilder()
     .setName('pack')
-    .setDescription('Calcular pack')
-    .addStringOption(option =>
-      option.setName('tipo')
-        .setDescription('Tipo de pack')
+    .setDescription('Seleccionar pack')
+    .addStringOption(o =>
+      o.setName('tipo')
         .setRequired(true)
         .addChoices(
           { name: 'Corto–Medio', value: 'corto' },
@@ -46,51 +66,108 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('registro')
-    .setDescription('Enviar comprobante')
-    .addStringOption(o => o.setName('vendedor').setDescription('Vendedor').setRequired(true))
-    .addUserOption(o => o.setName('comprador').setDescription('Comprador').setRequired(true))
-    .addStringOption(o => o.setName('arma').setDescription('Arma').setRequired(true))
-    .addStringOption(o => o.setName('precio').setDescription('Precio').setRequired(true))
-    .addAttachmentOption(o => o.setName('imagen').setDescription('Imagen').setRequired(true))
+    .setDescription('Registrar venta')
+    .addStringOption(o => o.setName('vendedor').setRequired(true))
+    .addStringOption(o => o.setName('comprador').setRequired(true))
+    .addStringOption(o => o.setName('arma').setRequired(true))
+    .addStringOption(o => o.setName('precio').setRequired(true))
+    .addAttachmentOption(o => o.setName('imagen').setRequired(true))
+
 ].map(c => c.toJSON());
 
-// ===== RESET + REGISTRO =====
+// ===== REGISTRAR =====
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 client.once('clientReady', async () => {
-  console.log(`Bot listo como ${client.user.tag}`);
+  console.log('Bot listo');
 
-  try {
-    // 🔥 BORRAR TODOS LOS COMANDOS
-    await rest.put(
-      Routes.applicationCommands(CLIENT_ID),
-      { body: [] }
-    );
-
-    console.log('Comandos antiguos eliminados');
-
-    // 🔥 REGISTRAR NUEVOS
-    await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-      { body: commands }
-    );
-
-    console.log('Comandos nuevos registrados');
-
-  } catch (error) {
-    console.error(error);
-  }
+  await rest.put(
+    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+    { body: commands }
+  );
 });
 
 // ===== INTERACCIONES =====
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  if (!interaction.member.roles.cache.has(ROL_ID)) {
-    return interaction.reply({ content: 'No tienes permiso.', ephemeral: true });
-  }
-
   try {
+
+    // ===== ARMAMENTO =====
+    if (interaction.commandName === 'armamento') {
+      return interaction.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0x2b2d31)
+            .setTitle('Armamento')
+            .setDescription(
+`M4
+Precio: $20.000
+
+Disponible solo para PVT oficiales
+
+Armas disponibles para todo el personal de la United States Marine Corps
+
+AK-47 — $3.240
+MP5 — $2.400
+Escopeta — $2.400
+Desert Eagle — $2.400
+Tec-9 — $2.000
+Uzi — $2.000
+
+Packs disponibles
+
+Corto–Medio — $4.500
+Medio I — $4.400
+Medio II — $4.000
+Medio III — $4.000
+Full I — $20.000
+Full II — $10.000`
+            )
+        ]
+      });
+    }
+
+    // ===== PAGO =====
+    if (interaction.commandName === 'pago') {
+
+      let total = 0;
+
+      const armas = [
+        interaction.options.getString('arma1'),
+        interaction.options.getString('arma2'),
+        interaction.options.getString('arma3'),
+        interaction.options.getString('arma4')
+      ];
+
+      for (let arma of armas) {
+        if (!arma) continue;
+        arma = arma.toLowerCase();
+        if (precios[arma]) total += precios[arma];
+      }
+
+      return interaction.reply({
+        content:
+`Total a pagar: $${total}
+
+Debes pagar en la caja fuerte /donar y pasar comprobante`
+      });
+    }
+
+    // ===== PACK =====
+    if (interaction.commandName === 'pack') {
+
+      const tipo = interaction.options.getString('tipo');
+      const pack = packs[tipo];
+
+      return interaction.reply({
+        content:
+`${pack.nombre}
+Total: $${pack.total}
+
+Debes pagar en la caja fuerte /donar y pasar comprobante`
+      });
+    }
 
     // ===== REGISTRO =====
     if (interaction.commandName === 'registro') {
@@ -98,56 +175,45 @@ client.on('interactionCreate', async interaction => {
       await interaction.deferReply({ ephemeral: true });
 
       const vendedor = interaction.options.getString('vendedor');
-      const comprador = interaction.options.getUser('comprador');
+      const comprador = interaction.options.getString('comprador');
       const arma = interaction.options.getString('arma');
       const precio = interaction.options.getString('precio');
       const imagen = interaction.options.getAttachment('imagen');
 
       const fecha = new Date().toLocaleDateString();
 
-      // CANAL PRINCIPAL
-      const canal = await client.channels.fetch(CANAL_REGISTRO).catch(() => null);
-
-      if (canal) {
-        await canal.send({
-          embeds: [
-            new EmbedBuilder()
-              .setTitle('COMPROBANTE DE COMPRA')
-              .setColor(0x2b2d31)
-              .addFields(
-                { name: 'VENDEDOR', value: vendedor },
-                { name: 'COMPRADOR', value: comprador.username },
-                { name: 'ARMA', value: arma },
-                { name: 'TOTAL', value: `$${precio}` }
-              )
-              .setImage(imagen.url)
-          ]
-        });
-      }
-
-      // HILO EXTERNO (FORMATO DIFERENTE)
-      const hilo = await client.channels.fetch(HILO_EXTERNO).catch(() => null);
-
-      if (hilo) {
-        await hilo.send({
-          content:
+      const mensaje =
 `Registro
 Dinero recibido: $${precio}
 Venta realizada: ${arma}
 Vendedor: ${vendedor}
-Comprador: ${comprador.username}
-Fecha: ${fecha}`,
+Comprador: ${comprador}
+Fecha: ${fecha}`;
+
+      // CANAL 1
+      const canal = await client.channels.fetch(CANAL_REGISTRO).catch(() => null);
+      if (canal) {
+        await canal.send({
+          content: mensaje,
+          files: [imagen.url]
+        });
+      }
+
+      // HILO DISCORD 2
+      const hilo = await client.channels.fetch(HILO_EXTERNO).catch(() => null);
+      if (hilo) {
+        await hilo.send({
+          content: mensaje,
           files: [imagen.url]
         });
       }
 
       return interaction.editReply('Registro enviado correctamente.');
-
     }
 
   } catch (error) {
     console.error(error);
-    return interaction.editReply('Error en el comando.');
+    return interaction.reply({ content: 'Error en el comando.', ephemeral: true });
   }
 });
 
