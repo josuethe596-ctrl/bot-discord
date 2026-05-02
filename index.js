@@ -202,7 +202,7 @@ Full II: AK-47, Desert Eagle, Tec-9, Escopeta ($10.000)`)
       });
     }
 
-    // ===== REGISTRO =====
+    // ===== REGISTRO (ARREGLADO) =====
     if (interaction.commandName === 'registro') {
 
       await interaction.deferReply({ ephemeral: true });
@@ -213,8 +213,8 @@ Full II: AK-47, Desert Eagle, Tec-9, Escopeta ($10.000)`)
       const precio = interaction.options.getString('precio');
       const imagen = interaction.options.getAttachment('imagen');
 
-      if (!imagen) {
-        return interaction.editReply('Debes subir una imagen.');
+      if (!imagen || !imagen.url) {
+        return interaction.editReply('Debes subir una imagen válida.');
       }
 
       const mensaje =
@@ -224,16 +224,19 @@ Venta realizada: ${arma}
 Vendedor: ${vendedor}
 Comprador: ${comprador}`;
 
-      const canal = await client.channels.fetch(CANAL_REGISTRO).catch(() => null);
+      // RESPONDE PRIMERO (evita "pensando...")
+      await interaction.editReply('Registro enviado correctamente.');
 
-      if (canal) {
-        await canal.send({
-          content: mensaje,
-          files: [{ attachment: imagen.url }]
-        });
-      }
-
-      return interaction.editReply('Registro enviado correctamente.');
+      // ENVÍA EN SEGUNDO PLANO
+      client.channels.fetch(CANAL_REGISTRO)
+        .then(canal => {
+          if (!canal) return;
+          canal.send({
+            content: mensaje,
+            files: [{ attachment: imagen.url }]
+          }).catch(err => console.log('Error enviando:', err.message));
+        })
+        .catch(err => console.log('Error canal:', err.message));
     }
 
   } catch (error) {
