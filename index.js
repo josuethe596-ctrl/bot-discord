@@ -8,9 +8,7 @@ const client = new Client({
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = '1500242491071402144';
 const GUILD_ID = '1123790874741047356';
-
 const CANAL_REGISTRO = '1249140780493443072';
-const HILO_EXTERNO = '1477760530125947183';
 
 // ===== PRECIOS =====
 const precios = {
@@ -81,15 +79,10 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 client.once('clientReady', async () => {
   console.log('Bot listo');
 
-  try {
-    await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-      { body: commands }
-    );
-    console.log('Comandos cargados');
-  } catch (err) {
-    console.error('Error registrando comandos:', err);
-  }
+  await rest.put(
+    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+    { body: commands }
+  );
 });
 
 // ===== INTERACCIONES =====
@@ -105,8 +98,7 @@ client.on('interactionCreate', async interaction => {
           new EmbedBuilder()
             .setColor(0x1e1f22)
             .setTitle('Catálogo de Armamento')
-            .setDescription(
-`Se comunica a todo el personal del **United States Marine Corps** el armamento disponible.
+            .setDescription(`Se comunica a todo el personal del **United States Marine Corps** el armamento disponible.
 
 **M4**
 Disponibilidad: Desde <@&1249078539135877169> en adelante
@@ -132,15 +124,13 @@ Medio I — $4.400
 Medio II — $4.000
 Medio III — $4.000
 Full I — $20.000
-Full II — $10.000`
-            )
+Full II — $10.000`)
         ]
       });
     }
 
     // ===== PAGO =====
     if (interaction.commandName === 'pago') {
-
       let total = 0;
       let lista = [];
 
@@ -202,7 +192,7 @@ Full II — $10.000`
         const imagen = interaction.options.getAttachment('imagen');
 
         if (!imagen) {
-          return interaction.editReply('Debes adjuntar una imagen.');
+          return interaction.editReply('Debes adjuntar una imagen válida.');
         }
 
         const fecha = new Date().toLocaleDateString();
@@ -215,19 +205,10 @@ Vendedor: ${vendedor}
 Comprador: ${comprador}
 Fecha: ${fecha}`;
 
-        // canal principal
         const canal = await client.channels.fetch(CANAL_REGISTRO).catch(() => null);
+
         if (canal) {
           await canal.send({
-            content: mensaje,
-            files: [{ attachment: imagen.url }]
-          });
-        }
-
-        // hilo externo
-        const hilo = await client.channels.fetch(HILO_EXTERNO).catch(() => null);
-        if (hilo) {
-          await hilo.send({
             content: mensaje,
             files: [{ attachment: imagen.url }]
           });
