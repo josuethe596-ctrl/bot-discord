@@ -1,7 +1,7 @@
 const express = require('express');
 const app = express();
 
-// KEEP ALIVE (no afecta en Railway pero no molesta)
+// KEEP ALIVE
 app.get('/', (req, res) => {
   res.send('Bot activo');
 });
@@ -41,7 +41,7 @@ const precios = {
 const commands = [
   new SlashCommandBuilder()
     .setName('armamento')
-    .setDescription('Ver catálogo de armamento USMC'),
+    .setDescription('Ver catálogo de armamento'),
 
   new SlashCommandBuilder()
     .setName('pago')
@@ -54,11 +54,11 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('registro')
-    .setDescription('Enviar comprobante de compra')
-    .addStringOption(option => option.setName('vendedor').setDescription('Nombre del vendedor').setRequired(true))
-    .addStringOption(option => option.setName('comprador').setDescription('Nombre del comprador').setRequired(true))
-    .addStringOption(option => option.setName('arma').setDescription('Arma comprada').setRequired(true))
-    .addAttachmentOption(option => option.setName('imagen').setDescription('Captura del comprobante').setRequired(true))
+    .setDescription('Enviar comprobante')
+    .addStringOption(option => option.setName('vendedor').setDescription('Vendedor').setRequired(true))
+    .addStringOption(option => option.setName('comprador').setDescription('Comprador').setRequired(true))
+    .addStringOption(option => option.setName('arma').setDescription('Arma').setRequired(true))
+    .addAttachmentOption(option => option.setName('imagen').setDescription('Captura').setRequired(true))
 ].map(cmd => cmd.toJSON());
 
 // 📡 REGISTRAR
@@ -84,46 +84,19 @@ client.on('ready', () => {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  // 🔒 Permiso por rol
+  // 🔒 PERMISO
   if (!interaction.member.roles.cache.has(rolID)) {
     return interaction.reply({ content: 'No tienes permiso', ephemeral: true });
   }
 
   // 📦 ARMAMENTO
   if (interaction.commandName === 'armamento') {
-
     const embed = new EmbedBuilder()
-      .setTitle('Catálogo de Armamento - USMC')
+      .setTitle('Catálogo de Armamento')
       .setColor(0xffffff)
       .addFields(
-        {
-          name: 'M4',
-          value: 'Disponible desde PVT oficial\nPrecio: $20.000'
-        },
-        {
-          name: 'Armas disponibles',
-          value:
-            'AK-47 — $3.240\n' +
-            'MP5 — $2.400\n' +
-            'Escopeta — $2.400\n' +
-            'Desert Eagle — $2.400\n' +
-            'Tec-9 — $2.000\n' +
-            'Uzi — $2.000'
-        },
-        {
-          name: 'Packs',
-          value:
-            'Corto–Medio: Desert Eagle + Escopeta — $4.500\n' +
-            'Medio I: MP5 + Escopeta — $4.400\n' +
-            'Medio II: Tec-9 + Escopeta — $4.000\n' +
-            'Medio III: Uzi + Escopeta — $4.000'
-        },
-        {
-          name: 'Full Packs',
-          value:
-            'Full I: M4 + Desert Eagle + MP5 + Escopeta — $20.000\n' +
-            'Full II: AK-47 + Desert Eagle + Tec-9 + Escopeta — $10.000'
-        }
+        { name: 'M4', value: '$20.000' },
+        { name: 'Armas', value: 'AK-47, MP5, Escopeta, Deagle, Tec-9, Uzi' }
       );
 
     return interaction.reply({ embeds: [embed] });
@@ -155,12 +128,14 @@ client.on('interactionCreate', async interaction => {
     }
 
     return interaction.reply(
-      `Armas: ${usadas.join(', ')}\nTotal a pagar: $${total}\n\nDebes donar a la caja fuerte usando /donar y tomar captura y mandar comprobante de pago.`
+      `Armas: ${usadas.join(', ')}\nTotal: $${total}\n\nUsa /donar y envía comprobante`
     );
   }
 
-  // 📄 REGISTRO DE COMPRA
+  // 📄 REGISTRO (FIXED)
   if (interaction.commandName === 'registro') {
+
+    await interaction.deferReply({ ephemeral: true });
 
     const vendedor = interaction.options.getString('vendedor');
     const comprador = interaction.options.getString('comprador');
@@ -170,7 +145,7 @@ client.on('interactionCreate', async interaction => {
     const canal = client.channels.cache.get(canalID);
 
     if (!canal) {
-      return interaction.reply({ content: 'Canal no encontrado', ephemeral: true });
+      return interaction.editReply('Canal no encontrado');
     }
 
     await canal.send({
@@ -183,7 +158,7 @@ Arma: ${arma}`,
       files: [imagen.url]
     });
 
-    return interaction.reply({ content: 'Comprobante enviado correctamente', ephemeral: true });
+    await interaction.editReply('Comprobante enviado correctamente');
   }
 });
 
