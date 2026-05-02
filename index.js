@@ -73,7 +73,7 @@ const commands = [
 
 ].map(c => c.toJSON());
 
-// ===== REGISTRAR =====
+// ===== REGISTRO =====
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 client.once('clientReady', async () => {
@@ -91,14 +91,42 @@ client.on('interactionCreate', async interaction => {
 
   try {
 
-    // ===== ARMAMENTO =====
+    // ===== ARMAMENTO (RESUMEN PRO) =====
     if (interaction.commandName === 'armamento') {
       return interaction.reply({
         embeds: [
           new EmbedBuilder()
             .setColor(COLOR)
             .setTitle('Catálogo de Armamento')
-            .setDescription('Usa /pago o /pack para calcular compras.')
+            .setDescription(`Se comunica a todo el personal del **United States Marine Corps** el armamento disponible.
+
+**M4**
+Disponible desde rango PVT oficial
+Precio: $20.000
+
+--------
+
+Armas generales
+
+AK-47 — $3.240
+MP5 — $2.400
+Escopeta — $2.400
+Desert Eagle — $2.400
+Tec-9 — $2.000
+Uzi — $2.000
+
+--------
+
+Packs disponibles
+
+Corto–Medio — $4.500
+Medio I — $4.400
+Medio II — $4.000
+Medio III — $4.000
+Full I — $20.000
+Full II — $10.000
+
+Usa /pago o /pack para calcular compras.`)
         ]
       });
     }
@@ -131,7 +159,10 @@ client.on('interactionCreate', async interaction => {
             .setColor(COLOR)
             .setTitle('Resumen de Compra')
             .setDescription(lista.join('\n') || 'Sin armas')
-            .addFields({ name: 'Total', value: `$${total}` })
+            .addFields(
+              { name: 'Total', value: `$${total}` },
+              { name: 'Pago', value: 'Debes pagar en la caja fuerte /donar y pasar comprobante' }
+            )
         ]
       });
     }
@@ -147,7 +178,10 @@ client.on('interactionCreate', async interaction => {
             .setColor(COLOR)
             .setTitle(pack.nombre)
             .setDescription(pack.armas.join('\n'))
-            .addFields({ name: 'Total', value: `$${pack.total}` })
+            .addFields(
+              { name: 'Total', value: `$${pack.total}` },
+              { name: 'Pago', value: 'Debes pagar en la caja fuerte /donar y pasar comprobante' }
+            )
         ]
       });
     }
@@ -176,19 +210,16 @@ Comprador: ${comprador}`;
 
       await interaction.editReply('Registro enviado correctamente.');
 
-      try {
-        const canal = await client.channels.fetch(CANAL_REGISTRO);
-
-        if (canal && canal.type === ChannelType.GuildText) {
-          await canal.send({
-            content: mensaje,
-            files: [{ attachment: imagen.url }]
-          });
-        }
-
-      } catch (err) {
-        console.log('Error canal:', err.message);
-      }
+      client.channels.fetch(CANAL_REGISTRO)
+        .then(canal => {
+          if (canal && canal.type === ChannelType.GuildText) {
+            canal.send({
+              content: mensaje,
+              files: [{ attachment: imagen.url }]
+            });
+          }
+        })
+        .catch(() => {});
     }
 
   } catch (error) {
