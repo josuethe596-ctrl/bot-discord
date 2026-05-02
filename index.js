@@ -61,7 +61,7 @@ const commands = [
     )
 ].map(c => c.toJSON());
 
-// 📡 REGISTRAR
+// 📡 REGISTRO
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 client.once('ready', async () => {
@@ -82,12 +82,12 @@ client.once('ready', async () => {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  // 🔒 ROL
-  if (!interaction.member.roles.cache.has(ROL_ID)) {
-    return interaction.reply({ content: 'No tienes permiso.', ephemeral: true });
-  }
-
   try {
+
+    // 🔒 ROL
+    if (!interaction.member.roles.cache.has(ROL_ID)) {
+      return interaction.reply({ content: 'No tienes permiso.', ephemeral: true });
+    }
 
     // 📦 ARMAMENTO
     if (interaction.commandName === 'armamento') {
@@ -142,6 +142,7 @@ client.on('interactionCreate', async interaction => {
 
       for (let arma of armas) {
         if (!arma) continue;
+
         arma = arma.toLowerCase();
 
         if (precios[arma]) {
@@ -162,6 +163,10 @@ client.on('interactionCreate', async interaction => {
 
       const tipo = interaction.options.getString('tipo');
       const pack = packs[tipo];
+
+      if (!pack) {
+        return interaction.editReply('Pack no válido.');
+      }
 
       return interaction.editReply(
         `📦 ${pack.nombre}\nArmas: ${pack.armas.join(', ')}\n💰 Total: $${pack.total}`
