@@ -4,10 +4,12 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
+// CONFIG
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = '1499955518725423244';
 const GUILD_ID = '1488371938265923705';
 const ROL_ID = '1249140217663979622';
+const CANAL_REGISTRO = '1249140780493443072';
 
 // PRECIOS
 const precios = {
@@ -32,6 +34,7 @@ const packs = {
 
 // COMANDOS
 const commands = [
+
   new SlashCommandBuilder()
     .setName('armamento')
     .setDescription('Catalogo de armas'),
@@ -60,7 +63,16 @@ const commands = [
           { name: 'Full I', value: 'full1' },
           { name: 'Full II', value: 'full2' }
         )
-    )
+    ),
+
+  new SlashCommandBuilder()
+    .setName('registro')
+    .setDescription('Enviar comprobante')
+    .addStringOption(o => o.setName('vendedor').setDescription('Vendedor').setRequired(true))
+    .addStringOption(o => o.setName('comprador').setDescription('Comprador').setRequired(true))
+    .addStringOption(o => o.setName('arma').setDescription('Arma').setRequired(true))
+    .addAttachmentOption(o => o.setName('imagen').setDescription('Imagen').setRequired(true))
+
 ].map(c => c.toJSON());
 
 // REGISTRO
@@ -89,7 +101,6 @@ client.on('interactionCreate', async interaction => {
 
     // ARMAMENTO
     if (interaction.commandName === 'armamento') {
-
       await interaction.deferReply();
 
       const embed = new EmbedBuilder()
@@ -114,7 +125,6 @@ client.on('interactionCreate', async interaction => {
 
     // PAGO
     if (interaction.commandName === 'pago') {
-
       await interaction.deferReply();
 
       const armas = [
@@ -142,14 +152,19 @@ client.on('interactionCreate', async interaction => {
         .setTitle('RESUMEN DE COMPRA')
         .setColor(0x2b2d31)
         .setDescription(lista.join('\n') || 'Sin armas')
-        .addFields({ name: 'TOTAL', value: `$${total}` });
+        .addFields(
+          { name: 'TOTAL', value: `$${total}` },
+          {
+            name: 'INSTRUCCIONES',
+            value: 'Debes donar a la caja fuerte usando /donar y enviar comprobante de pago'
+          }
+        );
 
       return interaction.editReply({ embeds: [embed] });
     }
 
     // PACK
     if (interaction.commandName === 'pack') {
-
       await interaction.deferReply();
 
       const tipo = interaction.options.getString('tipo');
@@ -167,8 +182,44 @@ client.on('interactionCreate', async interaction => {
       return interaction.editReply({ embeds: [embed] });
     }
 
-  } catch (err) {
-    console.error(err);
+    // REGISTRO
+    if (interaction.commandName === 'registro') {
+
+      await interaction.deferReply({ ephemeral: true });
+
+      const vendedor = interaction.options.getString('vendedor');
+      const comprador = interaction.options.getString('comprador');
+      const arma = interaction.options.getString('arma');
+      const imagen = interaction.options.getAttachment('imagen');
+
+      if (!imagen) {
+        return interaction.editReply('Debes subir una imagen.');
+      }
+
+      const canal = interaction.guild.channels.cache.get(CANAL_REGISTRO);
+
+      if (!canal) {
+        return interaction.editReply('Canal no encontrado.');
+      }
+
+      const embed = new EmbedBuilder()
+        .setTitle('COMPROBANTE DE COMPRA')
+        .setColor(0x2b2d31)
+        .addFields(
+          { name: 'VENDEDOR', value: vendedor },
+          { name: 'COMPRADOR', value: comprador },
+          { name: 'ARMA', value: arma }
+        )
+        .setImage(imagen.url);
+
+      await canal.send({ embeds: [embed] });
+
+      return interaction.editReply('Comprobante enviado correctamente');
+    }
+
+  } catch (error) {
+    console.error(error);
+
     if (interaction.deferred) {
       interaction.editReply('Error.');
     } else {
