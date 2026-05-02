@@ -8,7 +8,7 @@ const client = new Client({
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = '1499955518725423244';
 const GUILD_ID = '1488371938265923705';
-const ROL_ID = '1249140217663979622'; // 👈 TU ROL CORRECTO
+const ROL_ID = '1249140217663979622';
 
 // 💰 PRECIOS
 const precios = {
@@ -72,49 +72,61 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 client.once('ready', async () => {
   console.log(`Bot listo como ${client.user.tag}`);
 
-  try {
-    await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-      { body: commands }
-    );
-    console.log('Comandos registrados');
-  } catch (err) {
-    console.error(err);
-  }
+  await rest.put(
+    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+    { body: commands }
+  );
+
+  console.log('Comandos registrados');
 });
 
 // 🎮 INTERACCIONES
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  // 🔒 VERIFICAR ROL
+  // 🔒 ROL
   if (!interaction.member.roles.cache.has(ROL_ID)) {
     return interaction.reply({ content: 'No tienes permiso.', ephemeral: true });
   }
 
   try {
 
-    // 📦 ARMAMENTO
+    // 🛒 ARMAMENTO
     if (interaction.commandName === 'armamento') {
 
       await interaction.deferReply();
 
       const embed = new EmbedBuilder()
-        .setTitle('📦 Catálogo de Armamento')
-        .setColor(0xffffff)
+        .setTitle('🛒 CATÁLOGO DE ARMAMENTO')
+        .setColor(0x2b2d31)
+        .setDescription('Selecciona tu armamento disponible')
         .addFields(
-          { name: 'M4', value: '$20.000' },
           {
-            name: 'Armas',
-            value:
-              'AK-47 — $3.240\nMP5 — $2.400\nEscopeta — $2.400\nDeagle — $2.400\nTec-9 — $2.000\nUzi — $2.000'
+            name: '🔫 Arma Premium',
+            value: '**M4** — 💰 $20.000',
           },
           {
-            name: 'Packs',
+            name: '⚔️ Armas Disponibles',
             value:
-              'Corto–Medio — $4.500\nMedio I — $4.400\nMedio II — $4.000\nMedio III — $4.000\nFull I — $20.000\nFull II — $10.000'
+              'AK-47 — $3.240\n' +
+              'MP5 — $2.400\n' +
+              'Escopeta — $2.400\n' +
+              'Deagle — $2.400\n' +
+              'Tec-9 — $2.000\n' +
+              'Uzi — $2.000',
+          },
+          {
+            name: '📦 Packs',
+            value:
+              'Corto–Medio — $4.500\n' +
+              'Medio I — $4.400\n' +
+              'Medio II — $4.000\n' +
+              'Medio III — $4.000\n' +
+              'Full I — $20.000\n' +
+              'Full II — $10.000',
           }
-        );
+        )
+        .setFooter({ text: 'Usa /pago o /pack para calcular' });
 
       return interaction.editReply({ embeds: [embed] });
     }
@@ -133,7 +145,7 @@ client.on('interactionCreate', async interaction => {
       ];
 
       let total = 0;
-      let usadas = [];
+      let lista = [];
 
       for (let arma of armas) {
         if (!arma) continue;
@@ -142,11 +154,21 @@ client.on('interactionCreate', async interaction => {
 
         if (precios[arma]) {
           total += precios[arma];
-          usadas.push(arma);
+          lista.push(`• ${arma.toUpperCase()} — $${precios[arma]}`);
         }
       }
 
-      return interaction.editReply(`Armas: ${usadas.join(', ')}\n💰 Total: $${total}`);
+      const embed = new EmbedBuilder()
+        .setTitle('💰 RESUMEN DE COMPRA')
+        .setColor(0x2b2d31)
+        .setDescription(lista.join('\n') || 'Sin armas válidas')
+        .addFields({
+          name: '💵 Total a pagar',
+          value: `$${total}`,
+        })
+        .setFooter({ text: 'Usa /donar y envía comprobante' });
+
+      return interaction.editReply({ embeds: [embed] });
     }
 
     // 📦 PACK
@@ -157,18 +179,26 @@ client.on('interactionCreate', async interaction => {
       const tipo = interaction.options.getString('tipo');
       const pack = packs[tipo];
 
-      return interaction.editReply(
-        `📦 ${pack.nombre}\nArmas: ${pack.armas.join(', ')}\n💰 Total: $${pack.total}`
-      );
+      const embed = new EmbedBuilder()
+        .setTitle('📦 PACK SELECCIONADO')
+        .setColor(0x2b2d31)
+        .addFields(
+          { name: 'Tipo', value: pack.nombre },
+          { name: 'Armas', value: pack.armas.join(', ') },
+          { name: 'Total', value: `$${pack.total}` }
+        )
+        .setFooter({ text: 'Usa /donar para completar la compra' });
+
+      return interaction.editReply({ embeds: [embed] });
     }
 
   } catch (error) {
     console.error(error);
 
     if (interaction.deferred) {
-      interaction.editReply('Error.');
+      interaction.editReply('Ocurrió un error.');
     } else {
-      interaction.reply({ content: 'Error.', ephemeral: true });
+      interaction.reply({ content: 'Error inesperado.', ephemeral: true });
     }
   }
 });
