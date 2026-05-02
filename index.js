@@ -35,7 +35,10 @@ const packs = {
 
 // ===== COMANDOS =====
 const commands = [
-  new SlashCommandBuilder().setName('armamento').setDescription('Ver catálogo'),
+  new SlashCommandBuilder()
+    .setName('armamento')
+    .setDescription('Ver catálogo de armamento'),
+
   new SlashCommandBuilder()
     .setName('pago')
     .setDescription('Calcular total')
@@ -72,16 +75,21 @@ const commands = [
 
 ].map(c => c.toJSON());
 
-// ===== REGISTRO =====
+// ===== REGISTRAR =====
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 client.once('clientReady', async () => {
   console.log('Bot listo');
 
-  await rest.put(
-    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-    { body: commands }
-  );
+  try {
+    await rest.put(
+      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+      { body: commands }
+    );
+    console.log('Comandos cargados');
+  } catch (err) {
+    console.error('Error registrando comandos:', err);
+  }
 });
 
 // ===== INTERACCIONES =====
@@ -98,64 +106,33 @@ client.on('interactionCreate', async interaction => {
             .setColor(0x1e1f22)
             .setTitle('Catálogo de Armamento')
             .setDescription(
-`Se comunica a todo el personal del **United States Marine Corps** el armamento actualmente disponible para su compra.
+`Se comunica a todo el personal del **United States Marine Corps** el armamento disponible.
 
 **M4**
-
-Disponibilidad: Desde <@&1249078539135877169> en adelante, los Privates APB no podrán adquirir dicha arma hasta ser **PVT oficial**
-
-**Precio:** $20.000 
+Disponibilidad: Desde <@&1249078539135877169> en adelante
+Precio: $20.000
 
 --------
 
-## **Armas disponibles para todo el personal de la** <@&1249089172308885576>
+Armas disponibles para todo el personal <@&1249089172308885576>
 
-- **AK-47** — $3.240
-- **MP5** — $2.400
-- **Escopeta** — $2.400
-- **Desert Eagle** — $2.400
-- **Tec-9** — $2.000
-- **Uzi** — $2.000
-
---------
-
-## **Packs disponibles**
-
-**Pack Corto–Medio Alcance**
-- Desert Eagle
-- Escopeta  
-Total: **$4.500**
-
-**Pack Medio Alcance I**
-- MP5
-- Escopeta  
-Total: **$4.400**
-
-**Pack Medio Alcance II**
-- Tec-9
-- Escopeta  
-Total: **$4.000**
-
-**Pack Medio Alcance III**
-- Uzi
-- Escopeta  
-Total: **$4.000**
+AK-47 — $3.240
+MP5 — $2.400
+Escopeta — $2.400
+Desert Eagle — $2.400
+Tec-9 — $2.000
+Uzi — $2.000
 
 --------
 
-**Full Pack I**
-- M4
-- Desert Eagle
-- MP5
-- Escopeta  
-Total: **$20.000**
+Packs disponibles
 
-**Full Pack II**
-- AK-47
-- Desert Eagle
-- Tec-9
-- Escopeta  
-Total: **$10.000**`
+Corto–Medio — $4.500
+Medio I — $4.400
+Medio II — $4.000
+Medio III — $4.000
+Full I — $20.000
+Full II — $10.000`
             )
         ]
       });
@@ -163,6 +140,7 @@ Total: **$10.000**`
 
     // ===== PAGO =====
     if (interaction.commandName === 'pago') {
+
       let total = 0;
       let lista = [];
 
@@ -179,7 +157,7 @@ Total: **$10.000**`
 
         if (precios[arma]) {
           total += precios[arma];
-          lista.push(`- ${arma.toUpperCase()} — $${precios[arma]}`);
+          lista.push(`${arma.toUpperCase()} — $${precios[arma]}`);
         }
       }
 
@@ -189,7 +167,7 @@ Total: **$10.000**`
             .setColor(0x1e1f22)
             .setTitle('Resumen de Compra')
             .setDescription(lista.join('\n') || 'Sin armas')
-            .addFields({ name: 'Total a pagar', value: `$${total}` })
+            .addFields({ name: 'Total', value: `$${total}` })
             .setFooter({ text: 'Debes pagar en la caja fuerte /donar y pasar comprobante' })
         ]
       });
@@ -205,7 +183,7 @@ Total: **$10.000**`
           new EmbedBuilder()
             .setColor(0x1e1f22)
             .setTitle(pack.nombre)
-            .addFields({ name: 'Total a pagar', value: `$${pack.total}` })
+            .addFields({ name: 'Total', value: `$${pack.total}` })
             .setFooter({ text: 'Debes pagar en la caja fuerte /donar y pasar comprobante' })
         ]
       });
@@ -216,15 +194,20 @@ Total: **$10.000**`
 
       await interaction.deferReply({ ephemeral: true });
 
-      const vendedor = interaction.options.getString('vendedor');
-      const comprador = interaction.options.getString('comprador');
-      const arma = interaction.options.getString('arma');
-      const precio = interaction.options.getString('precio');
-      const imagen = interaction.options.getAttachment('imagen');
+      try {
+        const vendedor = interaction.options.getString('vendedor');
+        const comprador = interaction.options.getString('comprador');
+        const arma = interaction.options.getString('arma');
+        const precio = interaction.options.getString('precio');
+        const imagen = interaction.options.getAttachment('imagen');
 
-      const fecha = new Date().toLocaleDateString();
+        if (!imagen) {
+          return interaction.editReply('Debes adjuntar una imagen.');
+        }
 
-      const mensaje =
+        const fecha = new Date().toLocaleDateString();
+
+        const mensaje =
 `Registro
 Dinero recibido: $${precio}
 Venta realizada: ${arma}
@@ -232,13 +215,30 @@ Vendedor: ${vendedor}
 Comprador: ${comprador}
 Fecha: ${fecha}`;
 
-      const canal = await client.channels.fetch(CANAL_REGISTRO).catch(() => null);
-      if (canal) await canal.send({ content: mensaje, files: [imagen.url] });
+        // canal principal
+        const canal = await client.channels.fetch(CANAL_REGISTRO).catch(() => null);
+        if (canal) {
+          await canal.send({
+            content: mensaje,
+            files: [{ attachment: imagen.url }]
+          });
+        }
 
-      const hilo = await client.channels.fetch(HILO_EXTERNO).catch(() => null);
-      if (hilo) await hilo.send({ content: mensaje, files: [imagen.url] });
+        // hilo externo
+        const hilo = await client.channels.fetch(HILO_EXTERNO).catch(() => null);
+        if (hilo) {
+          await hilo.send({
+            content: mensaje,
+            files: [{ attachment: imagen.url }]
+          });
+        }
 
-      return interaction.editReply('Registro enviado correctamente.');
+        return interaction.editReply('Registro enviado correctamente.');
+
+      } catch (err) {
+        console.error(err);
+        return interaction.editReply('Error al procesar el registro.');
+      }
     }
 
   } catch (error) {
