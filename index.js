@@ -31,6 +31,11 @@ const packs = {
   full2: { nombre: 'Full II', armas: ['AK-47', 'Deagle', 'Tec-9', 'Escopeta'], total: 10000 }
 };
 
+// ===== GENERAR ID =====
+function generarID() {
+  return Math.random().toString(36).substring(2, 10).toUpperCase();
+}
+
 // ===== COMANDOS =====
 const commands = [
   new SlashCommandBuilder()
@@ -67,17 +72,10 @@ const commands = [
     .setName('registro')
     .setDescription('Enviar comprobante')
     .addStringOption(o => o.setName('vendedor').setDescription('Vendedor').setRequired(true))
-    .addStringOption(o => o.setName('comprador').setDescription('Comprador').setRequired(true))
+    .addUserOption(o => o.setName('comprador').setDescription('Comprador').setRequired(true))
     .addStringOption(o => o.setName('arma').setDescription('Arma').setRequired(true))
-    .addAttachmentOption(o => o.setName('imagen').setDescription('Imagen').setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName('factura')
-    .setDescription('Enviar factura al privado')
-    .addUserOption(o => o.setName('usuario').setDescription('Cliente').setRequired(true))
-    .addStringOption(o => o.setName('producto').setDescription('Producto').setRequired(true))
-    .addStringOption(o => o.setName('precio').setDescription('Precio total').setRequired(true))
-    .addStringOption(o => o.setName('metodo').setDescription('Metodo de pago').setRequired(true))
+    .addStringOption(o => o.setName('precio').setDescription('Precio').setRequired(true))
+    .addAttachmentOption(o => o.setName('imagen').setDescription('Imagen').setRequired(true))
 ].map(c => c.toJSON());
 
 // ===== REGISTRO =====
@@ -86,25 +84,21 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 client.once('clientReady', async () => {
   console.log(`Bot listo como ${client.user.tag}`);
 
-  try {
-    await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-      { body: commands }
-    );
-    console.log('Comandos registrados');
-  } catch (error) {
-    console.error('Error registrando comandos:', error);
-  }
+  await rest.put(
+    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+    { body: commands }
+  );
 });
 
 // ===== INTERACCIONES =====
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
+  if (!interaction.member.roles.cache.has(ROL_ID)) {
+    return interaction.reply({ content: 'No tienes permiso.', ephemeral: true });
+  }
+
   try {
-    if (!interaction.member.roles.cache.has(ROL_ID)) {
-      return interaction.reply({ content: 'No tienes permiso.', ephemeral: true });
-    }
 
     // ===== ARMAMENTO =====
     if (interaction.commandName === 'armamento') {
@@ -115,16 +109,8 @@ client.on('interactionCreate', async interaction => {
             .setColor(0x2b2d31)
             .addFields(
               { name: 'M4', value: '$20.000' },
-              {
-                name: 'ARMAS',
-                value:
-                  'AK-47 — $3.240\nMP5 — $2.400\nEscopeta — $2.400\nDeagle — $2.400\nTec-9 — $2.000\nUzi — $2.000'
-              },
-              {
-                name: 'PACKS',
-                value:
-                  'Corto–Medio — $4.500\nMedio I — $4.400\nMedio II — $4.000\nMedio III — $4.000\nFull I — $20.000\nFull II — $10.000'
-              }
+              { name: 'ARMAS', value: 'AK-47 — $3.240\nMP5 — $2.400\nEscopeta — $2.400\nDeagle — $2.400\nTec-9 — $2.000\nUzi — $2.000' },
+              { name: 'PACKS', value: 'Corto–Medio — $4.500\nMedio I — $4.400\nMedio II — $4.000\nMedio III — $4.000\nFull I — $20.000\nFull II — $10.000' }
             )
         ]
       });
@@ -172,14 +158,10 @@ client.on('interactionCreate', async interaction => {
       const tipo = interaction.options.getString('tipo');
       const pack = packs[tipo];
 
-      if (!pack) {
-        return interaction.reply({ content: 'Pack no válido.', ephemeral: true });
-      }
-
       return interaction.reply({
         embeds: [
           new EmbedBuilder()
-            .setTitle('PACK SELECCIONADO')
+            .setTitle('PACK')
             .setColor(0x2b2d31)
             .addFields(
               { name: 'TIPO', value: pack.nombre },
@@ -190,61 +172,53 @@ client.on('interactionCreate', async interaction => {
       });
     }
 
-    // ===== REGISTRO =====
+    // ===== REGISTRO + FACTURA AUTOMÁTICA =====
     if (interaction.commandName === 'registro') {
+
       await interaction.deferReply({ ephemeral: true });
 
       const vendedor = interaction.options.getString('vendedor');
-      const comprador = interaction.options.getString('comprador');
+      const comprador = interaction.options.getUser('comprador');
       const arma = interaction.options.getString('arma');
+      const precio = interaction.options.getString('precio');
       const imagen = interaction.options.getAttachment('imagen');
+
+      const idFactura = generarID();
 
       const canal = interaction.guild.channels.cache.get(CANAL_REGISTRO);
 
-      await canal.send({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('COMPROBANTE DE COMPRA')
-            .setColor(0x2b2d31)
-            .addFields(
-              { name: 'VENDEDOR', value: vendedor },
-              { name: 'COMPRADOR', value: comprador },
-              { name: 'ARMA', value: arma }
-            )
-            .setImage(imagen.url)
-        ]
-      });
-
-      return interaction.editReply('Comprobante enviado correctamente');
-    }
-
-    // ===== FACTURA =====
-    if (interaction.commandName === 'factura') {
-      await interaction.deferReply({ ephemeral: true });
-
-      const usuario = interaction.options.getUser('usuario');
-      const producto = interaction.options.getString('producto');
-      const precio = interaction.options.getString('precio');
-      const metodo = interaction.options.getString('metodo');
-
       const embed = new EmbedBuilder()
-        .setTitle('FACTURA')
+        .setTitle('COMPROBANTE DE COMPRA')
         .setColor(0x2b2d31)
         .addFields(
-          { name: 'CLIENTE', value: usuario.username },
-          { name: 'PRODUCTO', value: producto },
-          { name: 'TOTAL', value: `$${precio}` },
-          { name: 'METODO', value: metodo },
-          { name: 'FECHA', value: new Date().toLocaleString() }
-        );
+          { name: 'ID', value: idFactura },
+          { name: 'VENDEDOR', value: vendedor },
+          { name: 'COMPRADOR', value: comprador.username },
+          { name: 'ARMA', value: arma },
+          { name: 'TOTAL', value: `$${precio}` }
+        )
+        .setImage(imagen.url);
 
+      await canal.send({ embeds: [embed] });
+
+      // 📩 FACTURA AL PRIVADO
       try {
-        await usuario.send({ embeds: [embed] });
-      } catch {
-        return interaction.editReply('No se pudo enviar al privado.');
-      }
+        await comprador.send({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle('FACTURA')
+              .setColor(0x2b2d31)
+              .addFields(
+                { name: 'ID', value: idFactura },
+                { name: 'PRODUCTO', value: arma },
+                { name: 'TOTAL', value: `$${precio}` },
+                { name: 'FECHA', value: new Date().toLocaleString() }
+              )
+          ]
+        });
+      } catch {}
 
-      return interaction.editReply('Factura enviada.');
+      return interaction.editReply('Registro y factura enviados correctamente');
     }
 
   } catch (error) {
