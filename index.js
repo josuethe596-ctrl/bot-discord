@@ -16,9 +16,30 @@ const client = new Client({
 // ==================== CONFIGURACION ====================
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = '1500242491071402144';
-const GUILD_ID = '1123790874741047356';
 
-// Canales
+// MULTISERVIDOR: IDs de los servidores donde funcionara el bot
+const GUILD_IDS = [
+  '1123790874741047356', // Servidor original
+  '1464318287683780836'  // Servidor nuevo
+];
+
+// Canales por servidor (para funciones que necesitan canal fijo)
+const CANALES_POR_SERVIDOR = {
+  '1123790874741047356': {
+    REGISTRO_LOCAL: '1249140780493443072',
+    REGISTRO_EXTERNO: '1477760530125947183',
+    UNIDADES: '1477758449390719189',
+    ANUNCIOS: '1499835071245586544'
+  },
+  '1464318287683780836': {
+    REGISTRO_LOCAL: null, // Configura cuando sepas los IDs
+    REGISTRO_EXTERNO: null,
+    UNIDADES: null,
+    ANUNCIOS: null
+  }
+};
+
+// Canales del servidor original (compatibilidad hacia atras)
 const CANAL_REGISTRO_LOCAL = '1249140780493443072';
 const CANAL_REGISTRO_EXTERNO = '1477760530125947183';
 const CANAL_UNIDADES = '1477758449390719189';
@@ -215,8 +236,6 @@ function formatearHoraMilitar(fecha) {
 }
 
 function parsearFechaHora(fechaStr, horaStr) {
-  // fechaStr: DD/MM/YYYY o DD/MM/YY
-  // horaStr: HH:MM (24h)
   const partesFecha = fechaStr.split(/[\/\-]/);
   let dia = parseInt(partesFecha[0]);
   let mes = parseInt(partesFecha[1]) - 1;
@@ -492,7 +511,7 @@ const commands = [
 
 ].map(c => c.toJSON());
 
-// ==================== REGISTRO DE COMANDOS ====================
+// ==================== REGISTRO DE COMANDOS MULTISERVIDOR ====================
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 client.once('ready', async () => {
@@ -503,13 +522,27 @@ client.once('ready', async () => {
   });
 
   try {
+    // Registrar comandos GLOBALES (funcionan en todos los servidores)
     await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+      Routes.applicationCommands(CLIENT_ID),
       { body: commands }
     );
-    console.log('[SUCCESS] Comandos slash registrados');
+    console.log('[SUCCESS] Comandos slash registrados GLOBALMENTE');
+
+    // Tambien registrar en cada servidor especifico para aparicion inmediata
+    for (const guildId of GUILD_IDS) {
+      try {
+        await rest.put(
+          Routes.applicationGuildCommands(CLIENT_ID, guildId),
+          { body: commands }
+        );
+        console.log(`[SUCCESS] Comandos registrados en servidor ${guildId}`);
+      } catch (guildError) {
+        console.error(`[ERROR] Fallo al registrar en servidor ${guildId}:`, guildError.message);
+      }
+    }
   } catch (error) {
-    console.error('[ERROR] Fallo al registrar comandos:', error);
+    console.error('[ERROR] Fallo al registrar comandos globales:', error);
   }
 });
 
@@ -1300,8 +1333,6 @@ client.on('interactionCreate', async interaction => {
 
       // ==================== ANUNCIOS MEJORADO - SIN RESTRICCION DE ROL Y CON SELECCION DE CANAL ====================
       case 'anuncios': {
-        // ELIMINADO: Verificacion de rol - ahora cualquiera puede usarlo
-        
         await interaction.deferReply({ ephemeral: true });
 
         const canalSeleccionado = interaction.options.getChannel('canal');
