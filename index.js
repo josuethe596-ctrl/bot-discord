@@ -407,10 +407,21 @@ const commands = [
     .setName('pmes')
     .setDescription('Ver resumen mensual de dinero recolectado de pacas (solo autorizados)'),
 
-  // ==================== ANUNCIOS MEJORADO ====================
+  // ==================== ANUNCIOS MEJORADO - SIN RESTRICCION DE ROL Y CON SELECCION DE CANAL ====================
   new SlashCommandBuilder()
     .setName('anuncios')
-    .setDescription('Crear y enviar un comunicado oficial USMC (solo autorizados)')
+    .setDescription('Crear y enviar un comunicado oficial a cualquier canal')
+    .addChannelOption(o =>
+      o.setName('canal')
+        .setDescription('Canal donde enviar el anuncio')
+        .setRequired(true)
+        .addChannelTypes(
+          ChannelType.GuildText,
+          ChannelType.GuildAnnouncement,
+          ChannelType.PublicThread,
+          ChannelType.AnnouncementThread
+        )
+    )
     .addStringOption(o =>
       o.setName('titulo')
         .setDescription('Titulo del comunicado')
@@ -1287,22 +1298,13 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-      // ==================== ANUNCIOS MEJORADO - ESTILO MILITAR ====================
+      // ==================== ANUNCIOS MEJORADO - SIN RESTRICCION DE ROL Y CON SELECCION DE CANAL ====================
       case 'anuncios': {
-        if (!verificarRol(interaction, ROL_ANUNCIOS)) {
-          return interaction.reply({
-            embeds: [
-              new EmbedBuilder()
-                .setColor(0x8B0000)
-                .setTitle('ACCESO DENEGADO')
-                .setDescription('No tienes permiso para emitir comunicados oficiales.')
-            ],
-            ephemeral: true
-          });
-        }
-
+        // ELIMINADO: Verificacion de rol - ahora cualquiera puede usarlo
+        
         await interaction.deferReply({ ephemeral: true });
 
+        const canalSeleccionado = interaction.options.getChannel('canal');
         const titulo = interaction.options.getString('titulo');
         const contenido = interaction.options.getString('contenido');
         const tipo = interaction.options.getString('tipo');
@@ -1314,6 +1316,40 @@ client.on('interactionCreate', async interaction => {
         const firma = interaction.options.getString('firma');
         const imagen = interaction.options.getAttachment('imagen');
         const mencion = interaction.options.getString('mencion');
+
+        // Validar que el canal seleccionado sea valido
+        const esCanalValido = [
+          ChannelType.GuildText,
+          ChannelType.GuildAnnouncement,
+          ChannelType.PublicThread,
+          ChannelType.AnnouncementThread
+        ].includes(canalSeleccionado.type);
+
+        if (!esCanalValido) {
+          return interaction.editReply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x8B0000)
+                .setTitle('ERROR')
+                .setDescription('El canal seleccionado no es valido para enviar anuncios.')
+            ]
+          });
+        }
+
+        // Verificar permisos del bot en el canal seleccionado
+        const botMember = interaction.guild.members.me;
+        const permisosCanal = canalSeleccionado.permissionsFor(botMember);
+        
+        if (!permisosCanal.has('SendMessages') || !permisosCanal.has('ViewChannel')) {
+          return interaction.editReply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x8B0000)
+                .setTitle('ERROR DE PERMISOS')
+                .setDescription(`No tengo permisos para enviar mensajes en <#${canalSeleccionado.id}>. Contacta a un administrador.`)
+            ]
+          });
+        }
 
         // Formatear fecha actual militar
         const ahora = new Date();
@@ -1419,33 +1455,13 @@ client.on('interactionCreate', async interaction => {
         }
 
         try {
-          const canalAnuncios = await client.channels.fetch(CANAL_ANUNCIOS);
-          
-          const esCanalValido = [
-            ChannelType.GuildText,
-            ChannelType.GuildAnnouncement,
-            ChannelType.PublicThread,
-            ChannelType.AnnouncementThread
-          ].includes(canalAnuncios.type);
-
-          if (!esCanalValido) {
-            return interaction.editReply({
-              embeds: [
-                new EmbedBuilder()
-                  .setColor(0x8B0000)
-                  .setTitle('ERROR')
-                  .setDescription('El canal de anuncios no es valido.')
-              ]
-            });
-          }
-
-          const mensajeEnviado = await canalAnuncios.send({
+          const mensajeEnviado = await canalSeleccionado.send({
             content: contenidoMencion || undefined,
             embeds: [embedAnuncio]
           });
 
           // Crosspost si es canal de anuncios
-          if (canalAnuncios.type === ChannelType.GuildAnnouncement && mensajeEnviado.crosspost) {
+          if (canalSeleccionado.type === ChannelType.GuildAnnouncement && mensajeEnviado.crosspost) {
             await mensajeEnviado.crosspost().catch(() => {});
           }
 
@@ -1453,7 +1469,7 @@ client.on('interactionCreate', async interaction => {
           let confirmDesc = `**Comunicado emitido exitosamente**\n\n`;
           confirmDesc += `**Titulo:** ${titulo}\n`;
           confirmDesc += `**Tipo:** ${tituloFormateado}\n`;
-          confirmDesc += `**Canal:** <#${CANAL_ANUNCIOS}>\n`;
+          confirmDesc += `**Canal:** <#${canalSeleccionado.id}>\n`;
           if (mencion) confirmDesc += `**Mencion:** ${mencion}\n`;
           if (tieneHorarios) confirmDesc += `**Evento programado:** ${fechaEvento} ${horaEvento}\n`;
           confirmDesc += `\n[Ver Comunicado](${mensajeEnviado.url})`;
