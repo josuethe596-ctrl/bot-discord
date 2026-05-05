@@ -5,8 +5,7 @@ const {
   Routes, 
   SlashCommandBuilder, 
   EmbedBuilder, 
-  ChannelType,
-  PermissionFlagsBits
+  ChannelType
 } = require('discord.js');
 
 const client = new Client({
@@ -22,9 +21,11 @@ const GUILD_ID = '1123790874741047356';
 // Canales de registro
 const CANAL_REGISTRO_LOCAL = '1249140780493443072';
 const CANAL_REGISTRO_EXTERNO = '1477760530125947183';
+const CANAL_UNIDADES = '1477758449390719189';
 
-// Rol autorizado para /sueldo
+// Roles autorizados
 const ROL_SUELDO = '1249089172308885576';
+const ROL_UNIDADES = '1486140887430992004';
 
 // ==================== BASE DE DATOS ====================
 const CATALOGO_ARMAS = {
@@ -148,6 +149,9 @@ const TABLA_SUELDOS = {
   ]
 };
 
+// ==================== REGISTROS DE UNIDADES (EN MEMORIA) ====================
+const registrosUnidades = {};
+
 // ==================== UTILIDADES ====================
 function formatearPrecio(cantidad) {
   return `$${cantidad.toLocaleString('en-US')}`;
@@ -156,23 +160,34 @@ function formatearPrecio(cantidad) {
 function buscarArma(entrada) {
   if (!entrada) return null;
   const clave = entrada.toLowerCase().replace(/[-\s]/g, '');
-  
-  // Busqueda directa por clave
+
   if (CATALOGO_ARMAS[clave]) return CATALOGO_ARMAS[clave];
-  
-  // Busqueda por alias (especialmente para deagle/dk)
+
   for (const [key, arma] of Object.entries(CATALOGO_ARMAS)) {
     if (arma.alias && arma.alias.includes(clave)) {
       return arma;
     }
-    // Coincidencia parcial del nombre
     const nombreLimpio = arma.nombre.toLowerCase().replace(/[-\s]/g, '');
     if (nombreLimpio === clave || nombreLimpio.includes(clave)) {
       return arma;
     }
   }
-  
+
   return null;
+}
+
+function obtenerClaveMes(fecha) {
+  return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function obtenerNombreMes(claveMes) {
+  const [anio, mes] = claveMes.split('-');
+  const fecha = new Date(parseInt(anio), parseInt(mes) - 1, 1);
+  return fecha.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+}
+
+function verificarRol(interaction, rolId) {
+  return interaction.member.roles.cache.has(rolId);
 }
 
 // ==================== COMANDOS ====================
@@ -253,7 +268,45 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('sueldo')
-    .setDescription('Ver tabla de sueldos USMC (solo autorizados)')
+    .setDescription('Ver tabla de sueldos USMC (solo autorizados)'),
+
+  new SlashCommandBuilder()
+    .setName('unidadesp')
+    .setDescription('Registrar mantenimiento de unidad (solo autorizados)')
+    .addStringOption(o =>
+      o.setName('vehiculo')
+        .setDescription('Nombre del vehiculo (ej: LV-PD)')
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName('id')
+        .setDescription('ID del vehiculo (ej: NG-24602)')
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName('monto')
+        .setDescription('Monto sacado para mantenimiento (ej: 40000)')
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName('dia')
+        .setDescription('Dia de mantenimiento (ej: Lunes 13 de Abril)')
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName('fecha')
+        .setDescription('Fecha (DD/MM/AA) (ej: 13/04/26)')
+        .setRequired(true)
+    )
+    .addAttachmentOption(o =>
+      o.setName('captura')
+        .setDescription('Screenshot / Captura del mantenimiento')
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('umes')
+    .setDescription('Ver resumen mensual de mantenimientos (solo autorizados)')
 
 ].map(c => c.toJSON());
 
@@ -266,7 +319,7 @@ client.once('ready', async () => {
   client.guilds.cache.forEach(guild => {
     console.log(`  - ${guild.name} (${guild.id})`);
   });
-  
+
   try {
     await rest.put(
       Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
@@ -285,11 +338,10 @@ client.on('interactionCreate', async interaction => {
   try {
     switch (interaction.commandName) {
 
-      // ==================== ARMAMENTO ====================
       case 'armamento': {
         let descripcionArmas = '';
         let descripcionPacks = '';
-        
+
         const categorias = {};
         Object.values(CATALOGO_ARMAS).forEach(arma => {
           if (!categorias[arma.categoria]) categorias[arma.categoria] = [];
@@ -328,7 +380,6 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-      // ==================== PAGO ====================
       case 'pago': {
         const armasInput = [
           interaction.options.getString('arma1'),
@@ -392,7 +443,6 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-      // ==================== PACK ====================
       case 'pack': {
         const tipo = interaction.options.getString('tipo');
         const pack = CATALOGO_PACKS[tipo];
@@ -422,13 +472,8 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-      // ==================== SUELDO ====================
       case 'sueldo': {
-        // Verificar si el usuario tiene el rol autorizado
-        const miembro = interaction.member;
-        const tieneRol = miembro.roles.cache.has(ROL_SUELDO);
-        
-        if (!tieneRol) {
+        if (!verificarRol(interaction, ROL_SUELDO)) {
           return interaction.reply({
             embeds: [
               new EmbedBuilder()
@@ -441,7 +486,7 @@ client.on('interactionCreate', async interaction => {
         }
 
         let descripcion = '**Salario base.**\n\n';
-        
+
         for (const [categoria, roles] of Object.entries(TABLA_SUELDOS)) {
           descripcion += `# ${categoria}\n\n`;
           roles.forEach(item => {
@@ -463,7 +508,193 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-      // ==================== REGISTRO ====================
+      case 'unidadesp': {
+        if (!verificarRol(interaction, ROL_UNIDADES)) {
+          return interaction.reply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x8B0000)
+                .setTitle('Acceso Denegado')
+                .setDescription('No tienes permiso para usar este comando.')
+            ],
+            ephemeral: true
+          });
+        }
+
+        await interaction.deferReply({ ephemeral: true });
+
+        const vehiculo = interaction.options.getString('vehiculo');
+        const idVehiculo = interaction.options.getString('id');
+        const montoRaw = interaction.options.getString('monto');
+        const dia = interaction.options.getString('dia');
+        const fecha = interaction.options.getString('fecha');
+        const captura = interaction.options.getAttachment('captura');
+
+        const montoLimpio = montoRaw.replace(/[$,\s]/g, '');
+        const monto = parseInt(montoLimpio);
+
+        if (isNaN(monto) || monto <= 0) {
+          return interaction.editReply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x8B0000)
+                .setTitle('Error')
+                .setDescription(`El monto "${montoRaw}" no es valido. Usa solo numeros.`)
+            ]
+          });
+        }
+
+        if (!captura?.url) {
+          return interaction.editReply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x8B0000)
+                .setTitle('Error')
+                .setDescription('Debes adjuntar una captura valida.')
+            ]
+          });
+        }
+
+        const ahora = new Date();
+        const claveMes = obtenerClaveMes(ahora);
+
+        if (!registrosUnidades[claveMes]) {
+          registrosUnidades[claveMes] = [];
+        }
+
+        registrosUnidades[claveMes].push({
+          monto: monto,
+          vehiculo: vehiculo,
+          id: idVehiculo,
+          dia: dia,
+          fecha: fecha,
+          usuario: interaction.user.tag,
+          timestamp: ahora.toISOString()
+        });
+
+        const embedUnidad = new EmbedBuilder()
+          .setColor(0x8B0000)
+          .setDescription(
+            `__**FORMATO DE MANTENIMIENTO**__\n\n` +
+            `- **Nombre del Vehiculo**: \`${vehiculo}\`\n` +
+            `- **ID Del Vehiculo** : \`[${idVehiculo}]\`\n` +
+            `- **Monto Sacado** : \`${formatearPrecio(monto)}\`\n` +
+            `- **Dia de Mantenimiento** : \`${dia}\`\n` +
+            `- **Fecha** : \`${fecha}\`\n` +
+            `- **SS/Captura** :`
+          )
+          .setImage(captura.url)
+          .setTimestamp()
+          .setFooter({ 
+            text: `Registrado por ${interaction.user.tag}` 
+          });
+
+        let enviado = false;
+
+        try {
+          const canalUnidades = await client.channels.fetch(CANAL_UNIDADES);
+          console.log(`[UNIDADES] Canal: ${canalUnidades.name} | Tipo: ${canalUnidades.type}`);
+
+          const esCanalValido = [
+            ChannelType.GuildText,
+            ChannelType.PublicThread,
+            ChannelType.PrivateThread,
+            ChannelType.AnnouncementThread,
+            ChannelType.GuildForum
+          ].includes(canalUnidades.type);
+
+          if (esCanalValido) {
+            await canalUnidades.send({ embeds: [embedUnidad] });
+            console.log('[UNIDADES] Enviado correctamente');
+            enviado = true;
+          } else {
+            throw new Error(`Tipo no soportado: ${canalUnidades.type}`);
+          }
+        } catch (err) {
+          console.error('[UNIDADES] Error:', err.message);
+        }
+
+        const embedRespuesta = new EmbedBuilder()
+          .setColor(enviado ? 0x006400 : 0xB8860B)
+          .setTitle(enviado ? 'Registro Guardado' : 'Registro Guardado (Local)')
+          .setDescription(
+            `**Mantenimiento registrado**\n\n` +
+            `Vehiculo: ${vehiculo}\n` +
+            `Monto: ${formatearPrecio(monto)}\n` +
+            `Mes: ${obtenerNombreMes(claveMes)}\n\n` +
+            `${enviado ? 'Enviado al hilo de foro correctamente.' : 'Guardado localmente. No se pudo enviar al hilo de foro.'}`
+          );
+
+        if (!enviado) {
+          embedRespuesta.addFields({
+            name: 'Nota',
+            value: 'Verifica que el bot tenga acceso al hilo y permisos de enviar mensajes.'
+          });
+        }
+
+        await interaction.editReply({ embeds: [embedRespuesta] });
+        break;
+      }
+
+      case 'umes': {
+        if (!verificarRol(interaction, ROL_UNIDADES)) {
+          return interaction.reply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x8B0000)
+                .setTitle('Acceso Denegado')
+                .setDescription('No tienes permiso para usar este comando.')
+            ],
+            ephemeral: true
+          });
+        }
+
+        const ahora = new Date();
+        const claveMesActual = obtenerClaveMes(ahora);
+        const nombreMesActual = obtenerNombreMes(claveMesActual);
+
+        const registrosMes = registrosUnidades[claveMesActual] || [];
+        const totalMes = registrosMes.reduce((suma, reg) => suma + reg.monto, 0);
+
+        const mesesDisponibles = Object.keys(registrosUnidades).sort().reverse();
+
+        let descripcion = `**Resumen del mes: ${nombreMesActual}**\n\n`;
+
+        if (registrosMes.length === 0) {
+          descripcion += `No hay registros de mantenimiento este mes.\n`;
+        } else {
+          descripcion += `**Total de mantenimientos:** ${registrosMes.length}\n`;
+          descripcion += `**Dinero total recolectado:** ${formatearPrecio(totalMes)}\n\n`;
+
+          descripcion += `**Detalle de registros:**\n`;
+          registrosMes.forEach((reg, index) => {
+            descripcion += `${index + 1}. ${reg.vehiculo} [${reg.id}] — ${formatearPrecio(reg.monto)}\n`;
+          });
+        }
+
+        if (mesesDisponibles.length > 1) {
+          descripcion += `\n**Historial mensual:**\n`;
+          mesesDisponibles.forEach(mes => {
+            if (mes === claveMesActual) return;
+            const total = registrosUnidades[mes].reduce((s, r) => s + r.monto, 0);
+            const cantidad = registrosUnidades[mes].length;
+            descripcion += `${obtenerNombreMes(mes)}: ${formatearPrecio(total)} (${cantidad} registros)\n`;
+          });
+        }
+
+        const embed = new EmbedBuilder()
+          .setColor(0x8B0000)
+          .setTitle('RESUMEN MENSUAL DE MANTENIMIENTOS')
+          .setDescription(descripcion)
+          .setTimestamp()
+          .setFooter({ 
+            text: `Solicitado por ${interaction.user.tag} | USMC Unidades` 
+          });
+
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
       case 'registro': {
         await interaction.deferReply({ ephemeral: true });
 
@@ -473,7 +704,6 @@ client.on('interactionCreate', async interaction => {
         const precioRaw = interaction.options.getString('precio');
         const comprobante = interaction.options.getAttachment('comprobante');
 
-        // Validaciones
         if (!comprobante?.url) {
           return interaction.editReply({
             embeds: [
@@ -487,19 +717,18 @@ client.on('interactionCreate', async interaction => {
 
         const precioLimpio = precioRaw.replace(/[$,\s]/g, '');
         const precio = parseInt(precioLimpio);
-        
+
         if (isNaN(precio) || precio <= 0) {
           return interaction.editReply({
             embeds: [
               new EmbedBuilder()
                 .setColor(0x8B0000)
                 .setTitle('Error')
-                .setDescription(`El precio "${precioRaw}" no es valido. Usa solo numeros.`)
+                .setDescription(`El precio "${precioRaw}" no es valido.`)
             ]
           });
         }
 
-        // Formato de fecha
         const ahora = new Date();
         const fechaFormateada = ahora.toLocaleDateString('es-ES', {
           day: '2-digit',
@@ -511,7 +740,6 @@ client.on('interactionCreate', async interaction => {
           minute: '2-digit'
         });
 
-        // Embed que se envia a los canales de registro (sin titulo duplicado)
         const embedRegistro = new EmbedBuilder()
           .setColor(0x8B0000)
           .setDescription(
@@ -527,36 +755,19 @@ client.on('interactionCreate', async interaction => {
         let fallos = 0;
         const errores = [];
 
-        // ========== ENVIO CANAL LOCAL ==========
         try {
           const canalLocal = await client.channels.fetch(CANAL_REGISTRO_LOCAL);
-          console.log(`[REGISTRO] Canal local: ${canalLocal.name} (${canalLocal.id}) | Tipo: ${canalLocal.type}`);
-          
           if (canalLocal && (canalLocal.type === ChannelType.GuildText || canalLocal.type === ChannelType.PublicThread || canalLocal.type === ChannelType.PrivateThread)) {
             await canalLocal.send({ embeds: [embedRegistro] });
-            console.log('[REGISTRO] Enviado correctamente al canal local');
             exitos++;
-          } else {
-            throw new Error(`Tipo de canal no soportado: ${canalLocal.type}`);
           }
         } catch (err) {
           fallos++;
           errores.push(`Canal local: ${err.message}`);
-          console.error('[REGISTRO] Error canal local:', err.message);
         }
 
-        // ========== ENVIO CANAL EXTERNO (HILO DE FORO) ==========
         try {
-          console.log(`[REGISTRO] Intentando enviar a canal externo: ${CANAL_REGISTRO_EXTERNO}`);
           const canalExterno = await client.channels.fetch(CANAL_REGISTRO_EXTERNO);
-          
-          console.log(`[REGISTRO] Canal externo encontrado:`);
-          console.log(`  - Nombre: ${canalExterno.name}`);
-          console.log(`  - ID: ${canalExterno.id}`);
-          console.log(`  - Tipo: ${canalExterno.type} (${Object.keys(ChannelType).find(k => ChannelType[k] === canalExterno.type) || 'DESCONOCIDO'})`);
-          console.log(`  - Guild: ${canalExterno.guild?.name || 'N/A'} (${canalExterno.guildId})`);
-          
-          // Verificar si es canal de texto o hilo (thread)
           const esCanalValido = [
             ChannelType.GuildText,
             ChannelType.PublicThread,
@@ -565,38 +776,23 @@ client.on('interactionCreate', async interaction => {
           ].includes(canalExterno.type);
 
           if (esCanalValido) {
-            // Verificar permisos si es posible
-            try {
-              const botMember = await canalExterno.guild.members.fetch(client.user.id);
-              const permisos = canalExterno.permissionsFor(botMember);
-              console.log(`[REGISTRO] Permisos: SendMessages=${permisos?.has('SendMessages')}, ViewChannel=${permisos?.has('ViewChannel')}, AttachFiles=${permisos?.has('AttachFiles')}`);
-            } catch (permErr) {
-              console.log(`[REGISTRO] No se pudieron verificar permisos: ${permErr.message}`);
-            }
-            
             await canalExterno.send({ embeds: [embedRegistro] });
-            console.log('[REGISTRO] Enviado correctamente al canal externo');
             exitos++;
-          } else {
-            throw new Error(`Tipo de canal no soportado. Tipo detectado: ${canalExterno.type}. Se requiere GuildText(0), PublicThread(11), PrivateThread(12) o AnnouncementThread(10)`);
           }
         } catch (err) {
           fallos++;
           errores.push(`Canal externo: ${err.message}`);
-          console.error('[REGISTRO] Error canal externo:', err.message);
-          console.error('[REGISTRO] Stack:', err.stack);
         }
 
-        // ========== RESPUESTA AL USUARIO ==========
         let titulo, color, mensaje;
         if (exitos === 2) {
           titulo = 'Registro Exitoso';
           color = 0x006400;
-          mensaje = 'Se envio correctamente a ambos canales de registro.';
+          mensaje = 'Se envio correctamente a ambos canales.';
         } else if (exitos === 1) {
           titulo = 'Registro Parcial';
           color = 0xB8860B;
-          mensaje = 'Se envio a 1 de 2 canales. Revisa los permisos del bot en el servidor externo.';
+          mensaje = 'Se envio a 1 de 2 canales.';
         } else {
           titulo = 'Fallo Total';
           color = 0x8B0000;
@@ -610,19 +806,8 @@ client.on('interactionCreate', async interaction => {
 
         if (fallos > 0) {
           embedRespuesta.addFields({ 
-            name: 'Errores Detectados', 
-            value: errores.join('\n') || 'Error desconocido' 
-          });
-        }
-
-        if (fallos > 0) {
-          embedRespuesta.addFields({
-            name: 'Solucion',
-            value: 'Para el canal externo (hilo de foro):\\n' +
-                   '1. El bot debe estar en el servidor del hilo\\n' +
-                   '2. El bot necesita permiso: Send Messages in Threads\\n' +
-                   '3. El bot necesita permiso: View Channel\\n' +
-                   '4. El hilo no debe estar archivado ni bloqueado'
+            name: 'Errores', 
+            value: errores.join('\n') 
           });
         }
 
@@ -636,7 +821,7 @@ client.on('interactionCreate', async interaction => {
 
   } catch (error) {
     console.error(`[ERROR] Comando ${interaction.commandName}:`, error);
-    
+
     const mensajeError = new EmbedBuilder()
       .setColor(0x8B0000)
       .setTitle('Error del Sistema')
@@ -650,10 +835,8 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-// ==================== LOGS Y ERRORES ====================
 client.on('error', error => console.error('[CLIENT ERROR]', error));
 client.on('warn', warn => console.warn('[CLIENT WARN]', warn));
-client.on('shardError', error => console.error('[SHARD ERROR]', error));
 
 process.on('unhandledRejection', error => console.error('[UNHANDLED REJECTION]', error));
 process.on('uncaughtException', error => {
@@ -661,7 +844,6 @@ process.on('uncaughtException', error => {
   process.exit(1);
 });
 
-// ==================== LOGIN ====================
 client.login(TOKEN).catch(err => {
   console.error('[FATAL] No se pudo iniciar sesion:', err);
   process.exit(1);
