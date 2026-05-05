@@ -5,7 +5,14 @@ const {
   Routes, 
   SlashCommandBuilder, 
   EmbedBuilder, 
-  ChannelType
+  ChannelType,
+  PermissionFlagsBits,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle
 } = require('discord.js');
 
 const client = new Client({
@@ -22,11 +29,13 @@ const GUILD_ID = '1123790874741047356';
 const CANAL_REGISTRO_LOCAL = '1249140780493443072';
 const CANAL_REGISTRO_EXTERNO = '1477760530125947183';
 const CANAL_UNIDADES = '1477758449390719189';
+const CANAL_ANUNCIOS = '1499835071245586544';
 
 // Roles autorizados
 const ROL_SUELDO = '1249089172308885576';
 const ROL_UNIDADES = '1486140887430992004';
 const ROL_PACAS = '1365194603380342895';
+const ROL_ANUNCIOS = '1249089172308885576'; // Mismo rol de sueldo para anuncios
 
 // ==================== BASE DE DATOS ====================
 const CATALOGO_ARMAS = {
@@ -153,6 +162,7 @@ const TABLA_SUELDOS = {
 // ==================== REGISTROS EN MEMORIA ====================
 const registrosUnidades = {};
 const registrosPacas = {};
+const registrosArmamento = {}; // NUEVO: Registros de ventas de armamento por mes
 
 // ==================== UTILIDADES ====================
 function formatearPrecio(cantidad) {
@@ -245,7 +255,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('registro')
-    .setDescription('Registrar venta de armamento')
+    .setDescription('Registrar venta de armamento y enviar a hilos')
     .addStringOption(o => 
       o.setName('vendedor')
         .setDescription('Nombre del vendedor')
@@ -271,6 +281,10 @@ const commands = [
         .setDescription('Captura de pantalla del pago')
         .setRequired(true)
     ),
+
+  new SlashCommandBuilder()
+    .setName('armes')
+    .setDescription('Ver resumen mensual de ventas de armamento (solo autorizados)'),
 
   new SlashCommandBuilder()
     .setName('sueldo')
@@ -340,7 +354,49 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('pmes')
-    .setDescription('Ver resumen mensual de dinero recolectado de pacas (solo autorizados)')
+    .setDescription('Ver resumen mensual de dinero recolectado de pacas (solo autorizados)'),
+
+  // NUEVO COMANDO: /anuncios
+  new SlashCommandBuilder()
+    .setName('anuncios')
+    .setDescription('Crear y enviar un anuncio oficial USMC (solo autorizados)')
+    .addStringOption(o =>
+      o.setName('titulo')
+        .setDescription('Titulo del anuncio')
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName('contenido')
+        .setDescription('Contenido/mensaje del anuncio')
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName('tipo')
+        .setDescription('Tipo de anuncio')
+        .setRequired(true)
+        .addChoices(
+          { name: 'Comunicado Oficial', value: 'oficial' },
+          { name: 'Alerta / Aviso', value: 'alerta' },
+          { name: 'Entrenamiento', value: 'entrenamiento' },
+          { name: 'Promocion', value: 'promocion' },
+          { name: 'Evento Especial', value: 'evento' }
+        )
+    )
+    .addStringOption(o =>
+      o.setName('color')
+        .setDescription('Color del embed (hex sin #, ej: 8B0000)')
+        .setRequired(false)
+    )
+    .addAttachmentOption(o =>
+      o.setName('imagen')
+        .setDescription('Imagen adjunta al anuncio (opcional)')
+        .setRequired(false)
+    )
+    .addStringOption(o =>
+      o.setName('mencion')
+        .setDescription('Mencion especial (@everyone, @here, o rol ID)')
+        .setRequired(false)
+    )
 
 ].map(c => c.toJSON());
 
@@ -500,6 +556,260 @@ client.on('interactionCreate', async interaction => {
           .setTimestamp()
           .setFooter({ 
             text: 'USMC Sistema de Armamento | United States Marine Corps' 
+          });
+
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      // ==================== REGISTRO MEJORADO ====================
+      case 'registro': {
+        await interaction.deferReply({ ephemeral: true });
+
+        const vendedor = interaction.options.getString('vendedor');
+        const comprador = interaction.options.getString('comprador');
+        const arma = interaction.options.getString('arma');
+        const precioRaw = interaction.options.getString('precio');
+        const comprobante = interaction.options.getAttachment('comprobante');
+
+        if (!comprobante?.url) {
+          return interaction.editReply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x8B0000)
+                .setTitle('Error')
+                .setDescription('Debes adjuntar una imagen valida del comprobante.')
+            ]
+          });
+        }
+
+        const precioLimpio = precioRaw.replace(/[$,.\s]/g, '');
+        const precio = parseInt(precioLimpio);
+
+        if (isNaN(precio) || precio <= 0) {
+          return interaction.editReply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x8B0000)
+                .setTitle('Error')
+                .setDescription(`El precio "${precioRaw}" no es valido.`)
+            ]
+          });
+        }
+
+        // Guardar en memoria mensual
+        const ahora = new Date();
+        const claveMes = obtenerClaveMes(ahora);
+        
+        if (!registrosArmamento[claveMes]) {
+          registrosArmamento[claveMes] = [];
+        }
+        
+        registrosArmamento[claveMes].push({
+          vendedor,
+          comprador,
+          arma,
+          precio,
+          usuario: interaction.user.tag,
+          timestamp: ahora.toISOString()
+        });
+
+        const fechaFormateada = ahora.toLocaleDateString('es-ES', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric'
+        });
+        const horaFormateada = ahora.toLocaleTimeString('es-ES', {
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+
+        const embedRegistro = new EmbedBuilder()
+          .setColor(0x8B0000)
+          .setTitle('Venta de Armamento Registrada')
+          .setDescription(
+            `**Dinero recibido:** ${formatearPrecio(precio)}\n` +
+            `**Venta realizada:** ${arma}\n` +
+            `**Vendedor:** ${vendedor}\n` +
+            `**Comprador:** ${comprador}\n` +
+            `**Fecha:** ${fechaFormateada} ${horaFormateada}\n` +
+            `**Registrado por:** ${interaction.user.tag}`
+          )
+          .setImage(comprobante.url)
+          .setTimestamp()
+          .setFooter({ 
+            text: 'USMC Sistema de Armamento | Registro Oficial' 
+          });
+
+        let exitos = 0;
+        let fallos = 0;
+        const errores = [];
+        const hilosCreados = [];
+
+        // Funcion para enviar a hilos
+        async function enviarAHilo(channelId, embed, nombreHilo) {
+          try {
+            const canal = await client.channels.fetch(channelId);
+            
+            // Si es un canal de texto, crear hilo si no existe o enviar al existente
+            if (canal.type === ChannelType.GuildText || canal.type === ChannelType.GuildAnnouncement) {
+              const nombreThread = `${nombreHilo} — ${obtenerNombreMes(claveMes)}`;
+              
+              // Buscar hilo existente del mes actual
+              const threads = canal.threads.cache;
+              let thread = threads.find(t => t.name === nombreThread);
+              
+              if (!thread) {
+                // Crear nuevo hilo
+                thread = await canal.threads.create({
+                  name: nombreThread,
+                  autoArchiveDuration: 10080, // 7 dias
+                  reason: `Registro automatico de ${nombreHilo}`
+                });
+                hilosCreados.push(nombreThread);
+              }
+              
+              await thread.send({ embeds: [embed] });
+              return { success: true, thread: true };
+            } 
+            // Si ya es un hilo, enviar directo
+            else if ([ChannelType.PublicThread, ChannelType.PrivateThread, ChannelType.AnnouncementThread].includes(canal.type)) {
+              await canal.send({ embeds: [embed] });
+              return { success: true, thread: false };
+            }
+            else {
+              throw new Error('Tipo de canal no soportado para hilos');
+            }
+          } catch (err) {
+            throw err;
+          }
+        }
+
+        // Enviar a canal local
+        try {
+          const resultado = await enviarAHilo(CANAL_REGISTRO_LOCAL, embedRegistro, 'Ventas Armamento');
+          exitos++;
+          if (resultado.thread) console.log(`[REGISTRO] Hilo creado/enviado en canal local`);
+        } catch (err) {
+          fallos++;
+          errores.push(`Canal local: ${err.message}`);
+          console.error('[REGISTRO] Error canal local:', err.message);
+        }
+
+        // Enviar a canal externo
+        try {
+          const resultado = await enviarAHilo(CANAL_REGISTRO_EXTERNO, embedRegistro, 'Ventas Armamento');
+          exitos++;
+          if (resultado.thread) console.log(`[REGISTRO] Hilo creado/enviado en canal externo`);
+        } catch (err) {
+          fallos++;
+          errores.push(`Canal externo: ${err.message}`);
+          console.error('[REGISTRO] Error canal externo:', err.message);
+        }
+
+        // Construir respuesta
+        let titulo, color, mensaje;
+        if (exitos === 2) {
+          titulo = 'Registro Exitoso';
+          color = 0x006400;
+          mensaje = 'Venta registrada y enviada a ambos hilos correctamente.';
+        } else if (exitos === 1) {
+          titulo = 'Registro Parcial';
+          color = 0xB8860B;
+          mensaje = 'Venta enviada a 1 de 2 hilos.';
+        } else {
+          titulo = 'Fallo Total';
+          color = 0x8B0000;
+          mensaje = 'No se pudo enviar a ningun hilo. Guardado localmente.';
+        }
+
+        const embedRespuesta = new EmbedBuilder()
+          .setColor(color)
+          .setTitle(titulo)
+          .setDescription(
+            `${mensaje}\n\n` +
+            `**Detalles:**\n` +
+            `Vendedor: ${vendedor}\n` +
+            `Comprador: ${comprador}\n` +
+            `Arma: ${arma}\n` +
+            `Precio: ${formatearPrecio(precio)}\n` +
+            `Mes: ${obtenerNombreMes(claveMes)}\n` +
+            `${hilosCreados.length > 0 ? `\n**Hilos creados:** ${hilosCreados.join(', ')}` : ''}`
+          );
+
+        if (fallos > 0) {
+          embedRespuesta.addFields({ 
+            name: 'Errores', 
+            value: errores.join('\n') 
+          });
+        }
+
+        // Mostrar total acumulado del mes
+        const totalMes = registrosArmamento[claveMes].reduce((suma, reg) => suma + reg.precio, 0);
+        embedRespuesta.addFields({
+          name: 'Total Acumulado del Mes',
+          value: `${formatearPrecio(totalMes)} (${registrosArmamento[claveMes].length} ventas)`,
+          inline: false
+        });
+
+        await interaction.editReply({ embeds: [embedRespuesta] });
+        break;
+      }
+
+      // ==================== NUEVO: ARMES ====================
+      case 'armes': {
+        if (!verificarRol(interaction, ROL_SUELDO)) {
+          return interaction.reply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x8B0000)
+                .setTitle('Acceso Denegado')
+                .setDescription('No tienes permiso para usar este comando.')
+            ],
+            ephemeral: true
+          });
+        }
+
+        const ahora = new Date();
+        const claveMesActual = obtenerClaveMes(ahora);
+        const nombreMesActual = obtenerNombreMes(claveMesActual);
+
+        const registrosMes = registrosArmamento[claveMesActual] || [];
+        const totalMes = registrosMes.reduce((suma, reg) => suma + reg.precio, 0);
+
+        const mesesDisponibles = Object.keys(registrosArmamento).sort().reverse();
+
+        let descripcion = `**Resumen de ventas: ${nombreMesActual}**\n\n`;
+
+        if (registrosMes.length === 0) {
+          descripcion += `No hay registros de ventas de armamento este mes.\n`;
+        } else {
+          descripcion += `**Total de ventas:** ${registrosMes.length}\n`;
+          descripcion += `**Dinero total recaudado:** ${formatearPrecio(totalMes)}\n\n`;
+
+          descripcion += `**Detalle de ventas:**\n`;
+          registrosMes.forEach((reg, index) => {
+            descripcion += `${index + 1}. ${reg.arma} — ${formatearPrecio(reg.precio)} (${reg.vendedor} → ${reg.comprador})\n`;
+          });
+        }
+
+        if (mesesDisponibles.length > 1) {
+          descripcion += `\n**Historial mensual:**\n`;
+          mesesDisponibles.forEach(mes => {
+            if (mes === claveMesActual) return;
+            const total = registrosArmamento[mes].reduce((s, r) => s + r.precio, 0);
+            const cantidad = registrosArmamento[mes].length;
+            descripcion += `${obtenerNombreMes(mes)}: ${formatearPrecio(total)} (${cantidad} ventas)\n`;
+          });
+        }
+
+        const embed = new EmbedBuilder()
+          .setColor(0x8B0000)
+          .setTitle('RESUMEN MENSUAL DE VENTAS DE ARMAMENTO')
+          .setDescription(descripcion)
+          .setTimestamp()
+          .setFooter({ 
+            text: `Solicitado por ${interaction.user.tag} | USMC Armamento` 
           });
 
         await interaction.reply({ embeds: [embed] });
@@ -908,123 +1218,148 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-      case 'registro': {
+      // ==================== NUEVO: ANUNCIOS ====================
+      case 'anuncios': {
+        if (!verificarRol(interaction, ROL_ANUNCIOS)) {
+          return interaction.reply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x8B0000)
+                .setTitle('Acceso Denegado')
+                .setDescription('No tienes permiso para usar este comando. Solo personal autorizado.')
+            ],
+            ephemeral: true
+          });
+        }
+
         await interaction.deferReply({ ephemeral: true });
 
-        const vendedor = interaction.options.getString('vendedor');
-        const comprador = interaction.options.getString('comprador');
-        const arma = interaction.options.getString('arma');
-        const precioRaw = interaction.options.getString('precio');
-        const comprobante = interaction.options.getAttachment('comprobante');
+        const titulo = interaction.options.getString('titulo');
+        const contenido = interaction.options.getString('contenido');
+        const tipo = interaction.options.getString('tipo');
+        const colorRaw = interaction.options.getString('color') || '8B0000';
+        const imagen = interaction.options.getAttachment('imagen');
+        const mencion = interaction.options.getString('mencion');
 
-        if (!comprobante?.url) {
-          return interaction.editReply({
-            embeds: [
-              new EmbedBuilder()
-                .setColor(0x8B0000)
-                .setTitle('Error')
-                .setDescription('Debes adjuntar una imagen valida del comprobante.')
-            ]
-          });
+        // Validar color
+        let color;
+        try {
+          color = parseInt(colorRaw.replace('#', ''), 16);
+          if (isNaN(color)) color = 0x8B0000;
+        } catch {
+          color = 0x8B0000;
         }
 
-        const precioLimpio = precioRaw.replace(/[$,\s]/g, '');
-        const precio = parseInt(precioLimpio);
+        // Iconos por tipo
+        const iconos = {
+          oficial: '📢',
+          alerta: '⚠️',
+          entrenamiento: '🎖️',
+          promocion: '⭐',
+          evento: '🎉'
+        };
 
-        if (isNaN(precio) || precio <= 0) {
-          return interaction.editReply({
-            embeds: [
-              new EmbedBuilder()
-                .setColor(0x8B0000)
-                .setTitle('Error')
-                .setDescription(`El precio "${precioRaw}" no es valido.`)
-            ]
-          });
-        }
+        const icono = iconos[tipo] || '📢';
+        const tipoFormateado = tipo.charAt(0).toUpperCase() + tipo.slice(1);
 
-        const ahora = new Date();
-        const fechaFormateada = ahora.toLocaleDateString('es-ES', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric'
-        });
-        const horaFormateada = ahora.toLocaleTimeString('es-ES', {
-          hour: '2-digit',
-          minute: '2-digit'
-        });
-
-        const embedRegistro = new EmbedBuilder()
-          .setColor(0x8B0000)
-          .setDescription(
-            `Dinero recibido: ${formatearPrecio(precio)}\n` +
-            `Venta realizada: ${arma}\n` +
-            `Vendedor: ${vendedor}\n` +
-            `Comprador: ${comprador}\n` +
-            `Fecha: ${fechaFormateada} ${horaFormateada}`
+        const embedAnuncio = new EmbedBuilder()
+          .setColor(color)
+          .setTitle(`${icono} ${titulo}`)
+          .setDescription(contenido)
+          .addFields(
+            { 
+              name: 'Tipo de Anuncio', 
+              value: `${icono} ${tipoFormateado}`, 
+              inline: true 
+            },
+            { 
+              name: 'Publicado por', 
+              value: `<@${interaction.user.id}>`, 
+              inline: true 
+            },
+            { 
+              name: 'Fecha', 
+              value: `<t:${Math.floor(Date.now() / 1000)}:F>`, 
+              inline: true 
+            }
           )
-          .setImage(comprobante.url);
+          .setTimestamp()
+          .setFooter({ 
+            text: 'USMC Comunicados Oficiales | United States Marine Corps',
+            iconURL: interaction.guild?.iconURL({ dynamic: true }) || null
+          });
 
-        let exitos = 0;
-        let fallos = 0;
-        const errores = [];
+        if (imagen?.url) {
+          embedAnuncio.setImage(imagen.url);
+        }
 
-        try {
-          const canalLocal = await client.channels.fetch(CANAL_REGISTRO_LOCAL);
-          if (canalLocal && (canalLocal.type === ChannelType.GuildText || canalLocal.type === ChannelType.PublicThread || canalLocal.type === ChannelType.PrivateThread)) {
-            await canalLocal.send({ embeds: [embedRegistro] });
-            exitos++;
-          }
-        } catch (err) {
-          fallos++;
-          errores.push(`Canal local: ${err.message}`);
+        // Construir contenido de mencion
+        let contenidoMencion = '';
+        if (mencion) {
+          if (mencion === '@everyone') contenidoMencion = '@everyone';
+          else if (mencion === '@here') contenidoMencion = '@here';
+          else if (mencion.match(/^\d+$/)) contenidoMencion = `<@&${mencion}>`;
+          else contenidoMencion = mencion;
         }
 
         try {
-          const canalExterno = await client.channels.fetch(CANAL_REGISTRO_EXTERNO);
+          const canalAnuncios = await client.channels.fetch(CANAL_ANUNCIOS);
+          
           const esCanalValido = [
             ChannelType.GuildText,
+            ChannelType.GuildAnnouncement,
             ChannelType.PublicThread,
-            ChannelType.PrivateThread,
             ChannelType.AnnouncementThread
-          ].includes(canalExterno.type);
+          ].includes(canalAnuncios.type);
 
-          if (esCanalValido) {
-            await canalExterno.send({ embeds: [embedRegistro] });
-            exitos++;
+          if (!esCanalValido) {
+            return interaction.editReply({
+              embeds: [
+                new EmbedBuilder()
+                  .setColor(0x8B0000)
+                  .setTitle('Error')
+                  .setDescription('El canal de anuncios no es valido.')
+              ]
+            });
           }
+
+          const mensajeEnviado = await canalAnuncios.send({
+            content: contenidoMencion || undefined,
+            embeds: [embedAnuncio]
+          });
+
+          // Si es canal de anuncios, publicar
+          if (canalAnuncios.type === ChannelType.GuildAnnouncement && mensajeEnviado.crosspost) {
+            await mensajeEnviado.crosspost().catch(() => {});
+          }
+
+          const embedConfirmacion = new EmbedBuilder()
+            .setColor(0x006400)
+            .setTitle('Anuncio Publicado')
+            .setDescription(
+              `**Anuncio enviado exitosamente**\n\n` +
+              `**Titulo:** ${titulo}\n` +
+              `**Tipo:** ${tipoFormateado}\n` +
+              `**Canal:** <#${CANAL_ANUNCIOS}>\n` +
+              `**Mencion:** ${mencion || 'Ninguna'}\n` +
+              `**Imagen:** ${imagen ? 'Adjunta' : 'No'}\n\n` +
+              `[Ver Anuncio](${mensajeEnviado.url})`
+            )
+            .setTimestamp();
+
+          await interaction.editReply({ embeds: [embedConfirmacion] });
+
         } catch (err) {
-          fallos++;
-          errores.push(`Canal externo: ${err.message}`);
-        }
-
-        let titulo, color, mensaje;
-        if (exitos === 2) {
-          titulo = 'Registro Exitoso';
-          color = 0x006400;
-          mensaje = 'Se envio correctamente a ambos canales.';
-        } else if (exitos === 1) {
-          titulo = 'Registro Parcial';
-          color = 0xB8860B;
-          mensaje = 'Se envio a 1 de 2 canales.';
-        } else {
-          titulo = 'Fallo Total';
-          color = 0x8B0000;
-          mensaje = 'No se pudo enviar a ningun canal.';
-        }
-
-        const embedRespuesta = new EmbedBuilder()
-          .setColor(color)
-          .setTitle(titulo)
-          .setDescription(mensaje);
-
-        if (fallos > 0) {
-          embedRespuesta.addFields({ 
-            name: 'Errores', 
-            value: errores.join('\n') 
+          console.error('[ANUNCIOS] Error:', err.message);
+          await interaction.editReply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x8B0000)
+                .setTitle('Error')
+                .setDescription(`No se pudo enviar el anuncio: ${err.message}`)
+            ]
           });
         }
-
-        await interaction.editReply({ embeds: [embedRespuesta] });
         break;
       }
 
