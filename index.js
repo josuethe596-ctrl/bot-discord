@@ -5,7 +5,8 @@ const {
   Routes, 
   SlashCommandBuilder, 
   EmbedBuilder, 
-  ChannelType
+  ChannelType,
+  PermissionFlagsBits
 } = require('discord.js');
 
 const client = new Client({
@@ -21,6 +22,9 @@ const GUILD_ID = '1123790874741047356';
 // Canales de registro
 const CANAL_REGISTRO_LOCAL = '1249140780493443072';
 const CANAL_REGISTRO_EXTERNO = '1477760530125947183';
+
+// Rol autorizado para /sueldo
+const ROL_SUELDO = '1249089172308885576';
 
 // ==================== BASE DE DATOS ====================
 const CATALOGO_ARMAS = {
@@ -57,7 +61,8 @@ const CATALOGO_ARMAS = {
     precio: 2400, 
     categoria: 'Pistola',
     requisito: 'Sin restricciones',
-    descripcion: 'Pistola de alto calibre, peso considerable'
+    descripcion: 'Pistola de alto calibre, peso considerable',
+    alias: ['dk', 'deagle', 'deserteagle']
   },
   tec9: { 
     nombre: 'Tec-9', 
@@ -114,6 +119,35 @@ const CATALOGO_PACKS = {
   }
 };
 
+// ==================== TABLA DE SUELDOS ====================
+const TABLA_SUELDOS = {
+  'Commissioned Officers': [
+    { rol: '<@&1249070554330169456>', sueldo: 80000 },
+    { rol: '<@&1249071682476314716>', sueldo: 80000 },
+    { rol: '<@&1249072078435385354>', sueldo: 80000 },
+    { rol: '<@&1249072776480952430>', sueldo: 80000 },
+    { rol: '<@&1249073570932330647>', sueldo: 80000 }
+  ],
+  'Warrant Officers': [
+    { rol: '<@&1465109878744940667>', sueldo: 75000 },
+    { rol: '<@&1249074305438978150>', sueldo: 75000 }
+  ],
+  'Staff Non - Commissioned Officers': [
+    { rol: '<@&1465108847633895456>', sueldo: 70000 },
+    { rol: '<@&1249075344410153061>', sueldo: 70000 },
+    { rol: '<@&1249076492147626044>', sueldo: 65000 }
+  ],
+  'Non - Commissioned Officers': [
+    { rol: '<@&1249076802312212500>', sueldo: 65000 },
+    { rol: '<@&1249077129384165450>', sueldo: 60000 }
+  ],
+  'Junior Enlisted': [
+    { rol: '<@&1249078185077772409>', sueldo: 55000 },
+    { rol: '<@&1249078391530061855>', sueldo: 50000 },
+    { rol: '<@&1249078539135877169>', sueldo: 45000 }
+  ]
+};
+
 // ==================== UTILIDADES ====================
 function formatearPrecio(cantidad) {
   return `$${cantidad.toLocaleString('en-US')}`;
@@ -122,7 +156,23 @@ function formatearPrecio(cantidad) {
 function buscarArma(entrada) {
   if (!entrada) return null;
   const clave = entrada.toLowerCase().replace(/[-\s]/g, '');
-  return CATALOGO_ARMAS[clave] || null;
+  
+  // Busqueda directa por clave
+  if (CATALOGO_ARMAS[clave]) return CATALOGO_ARMAS[clave];
+  
+  // Busqueda por alias (especialmente para deagle/dk)
+  for (const [key, arma] of Object.entries(CATALOGO_ARMAS)) {
+    if (arma.alias && arma.alias.includes(clave)) {
+      return arma;
+    }
+    // Coincidencia parcial del nombre
+    const nombreLimpio = arma.nombre.toLowerCase().replace(/[-\s]/g, '');
+    if (nombreLimpio === clave || nombreLimpio.includes(clave)) {
+      return arma;
+    }
+  }
+  
+  return null;
 }
 
 // ==================== COMANDOS ====================
@@ -136,7 +186,7 @@ const commands = [
     .setDescription('Calcular total de compra individual')
     .addStringOption(o => 
       o.setName('arma1')
-        .setDescription('Primera arma')
+        .setDescription('Primera arma (escribe dk para Desert Eagle)')
         .setRequired(true)
     )
     .addStringOption(o => 
@@ -199,7 +249,11 @@ const commands = [
       o.setName('comprobante')
         .setDescription('Captura de pantalla del pago')
         .setRequired(true)
-    )
+    ),
+
+  new SlashCommandBuilder()
+    .setName('sueldo')
+    .setDescription('Ver tabla de sueldos USMC (solo autorizados)')
 
 ].map(c => c.toJSON());
 
@@ -368,6 +422,47 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
+      // ==================== SUELDO ====================
+      case 'sueldo': {
+        // Verificar si el usuario tiene el rol autorizado
+        const miembro = interaction.member;
+        const tieneRol = miembro.roles.cache.has(ROL_SUELDO);
+        
+        if (!tieneRol) {
+          return interaction.reply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x8B0000)
+                .setTitle('Acceso Denegado')
+                .setDescription('No tienes permiso para usar este comando.')
+            ],
+            ephemeral: true
+          });
+        }
+
+        let descripcion = '**Salario base.**\n\n';
+        
+        for (const [categoria, roles] of Object.entries(TABLA_SUELDOS)) {
+          descripcion += `# ${categoria}\n\n`;
+          roles.forEach(item => {
+            descripcion += `${item.rol} ${formatearPrecio(item.sueldo)}\n`;
+          });
+          descripcion += '\n';
+        }
+
+        const embed = new EmbedBuilder()
+          .setColor(0x8B0000)
+          .setTitle('Tabla de Sueldos USMC')
+          .setDescription(descripcion)
+          .setTimestamp()
+          .setFooter({ 
+            text: 'USMC Sistema de Armamento | United States Marine Corps' 
+          });
+
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
       // ==================== REGISTRO ====================
       case 'registro': {
         await interaction.deferReply({ ephemeral: true });
@@ -416,12 +511,10 @@ client.on('interactionCreate', async interaction => {
           minute: '2-digit'
         });
 
-        // Embed que se envia a los canales de registro
+        // Embed que se envia a los canales de registro (sin titulo duplicado)
         const embedRegistro = new EmbedBuilder()
           .setColor(0x8B0000)
-          .setTitle('Registro')
           .setDescription(
-            `**Registro**\n\n` +
             `Dinero recibido: ${formatearPrecio(precio)}\n` +
             `Venta realizada: ${arma}\n` +
             `Vendedor: ${vendedor}\n` +
@@ -437,44 +530,61 @@ client.on('interactionCreate', async interaction => {
         // ========== ENVIO CANAL LOCAL ==========
         try {
           const canalLocal = await client.channels.fetch(CANAL_REGISTRO_LOCAL);
-          console.log(`[REGISTRO] Canal local encontrado: ${canalLocal.name} (${canalLocal.id})`);
-          if (canalLocal && canalLocal.type === ChannelType.GuildText) {
+          console.log(`[REGISTRO] Canal local: ${canalLocal.name} (${canalLocal.id}) | Tipo: ${canalLocal.type}`);
+          
+          if (canalLocal && (canalLocal.type === ChannelType.GuildText || canalLocal.type === ChannelType.PublicThread || canalLocal.type === ChannelType.PrivateThread)) {
             await canalLocal.send({ embeds: [embedRegistro] });
             console.log('[REGISTRO] Enviado correctamente al canal local');
             exitos++;
           } else {
-            throw new Error('El canal local no es un canal de texto');
+            throw new Error(`Tipo de canal no soportado: ${canalLocal.type}`);
           }
         } catch (err) {
           fallos++;
-          errores.push(`Canal local (${CANAL_REGISTRO_LOCAL}): ${err.message}`);
+          errores.push(`Canal local: ${err.message}`);
           console.error('[REGISTRO] Error canal local:', err.message);
         }
 
-        // ========== ENVIO CANAL EXTERNO ==========
+        // ========== ENVIO CANAL EXTERNO (HILO DE FORO) ==========
         try {
           console.log(`[REGISTRO] Intentando enviar a canal externo: ${CANAL_REGISTRO_EXTERNO}`);
           const canalExterno = await client.channels.fetch(CANAL_REGISTRO_EXTERNO);
-          console.log(`[REGISTRO] Canal externo encontrado: ${canalExterno.name} (${canalExterno.id}) en guild ${canalExterno.guild.name}`);
           
-          if (canalExterno && canalExterno.type === ChannelType.GuildText) {
-            // Verificar permisos
-            const botMember = canalExterno.guild.members.cache.get(client.user.id);
-            if (botMember) {
+          console.log(`[REGISTRO] Canal externo encontrado:`);
+          console.log(`  - Nombre: ${canalExterno.name}`);
+          console.log(`  - ID: ${canalExterno.id}`);
+          console.log(`  - Tipo: ${canalExterno.type} (${Object.keys(ChannelType).find(k => ChannelType[k] === canalExterno.type) || 'DESCONOCIDO'})`);
+          console.log(`  - Guild: ${canalExterno.guild?.name || 'N/A'} (${canalExterno.guildId})`);
+          
+          // Verificar si es canal de texto o hilo (thread)
+          const esCanalValido = [
+            ChannelType.GuildText,
+            ChannelType.PublicThread,
+            ChannelType.PrivateThread,
+            ChannelType.AnnouncementThread
+          ].includes(canalExterno.type);
+
+          if (esCanalValido) {
+            // Verificar permisos si es posible
+            try {
+              const botMember = await canalExterno.guild.members.fetch(client.user.id);
               const permisos = canalExterno.permissionsFor(botMember);
-              console.log(`[REGISTRO] Permisos en canal externo: SEND_MESSAGES=${permisos?.has('SendMessages')}, VIEW_CHANNEL=${permisos?.has('ViewChannel')}`);
+              console.log(`[REGISTRO] Permisos: SendMessages=${permisos?.has('SendMessages')}, ViewChannel=${permisos?.has('ViewChannel')}, AttachFiles=${permisos?.has('AttachFiles')}`);
+            } catch (permErr) {
+              console.log(`[REGISTRO] No se pudieron verificar permisos: ${permErr.message}`);
             }
             
             await canalExterno.send({ embeds: [embedRegistro] });
             console.log('[REGISTRO] Enviado correctamente al canal externo');
             exitos++;
           } else {
-            throw new Error('El canal externo no es un canal de texto');
+            throw new Error(`Tipo de canal no soportado. Tipo detectado: ${canalExterno.type}. Se requiere GuildText(0), PublicThread(11), PrivateThread(12) o AnnouncementThread(10)`);
           }
         } catch (err) {
           fallos++;
-          errores.push(`Canal externo (${CANAL_REGISTRO_EXTERNO}): ${err.message}`);
+          errores.push(`Canal externo: ${err.message}`);
           console.error('[REGISTRO] Error canal externo:', err.message);
+          console.error('[REGISTRO] Stack:', err.stack);
         }
 
         // ========== RESPUESTA AL USUARIO ==========
@@ -505,11 +615,14 @@ client.on('interactionCreate', async interaction => {
           });
         }
 
-        // Agregar nota sobre el servidor externo si fallo
         if (fallos > 0) {
           embedRespuesta.addFields({
-            name: 'Nota Importante',
-            value: 'Para enviar al canal externo, el bot debe estar unido al servidor donde esta ese canal y tener permiso de enviar mensajes.'
+            name: 'Solucion',
+            value: 'Para el canal externo (hilo de foro):\\n' +
+                   '1. El bot debe estar en el servidor del hilo\\n' +
+                   '2. El bot necesita permiso: Send Messages in Threads\\n' +
+                   '3. El bot necesita permiso: View Channel\\n' +
+                   '4. El hilo no debe estar archivado ni bloqueado'
           });
         }
 
