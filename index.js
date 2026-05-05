@@ -208,6 +208,10 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 client.once('ready', async () => {
   console.log(`[READY] Bot conectado como ${client.user.tag}`);
+  console.log(`[INFO] Servidores conectados: ${client.guilds.cache.size}`);
+  client.guilds.cache.forEach(guild => {
+    console.log(`  - ${guild.name} (${guild.id})`);
+  });
   
   try {
     await rest.put(
@@ -400,48 +404,80 @@ client.on('interactionCreate', async interaction => {
           });
         }
 
+        // Formato de fecha
+        const ahora = new Date();
+        const fechaFormateada = ahora.toLocaleDateString('es-ES', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric'
+        });
+        const horaFormateada = ahora.toLocaleTimeString('es-ES', {
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+
         // Embed que se envia a los canales de registro
         const embedRegistro = new EmbedBuilder()
           .setColor(0x8B0000)
-          .setTitle('Resumen de la Compra')
-          .addFields(
-            { name: 'VENDEDOR', value: vendedor, inline: true },
-            { name: 'COMPRADOR', value: comprador, inline: true },
-            { name: 'ARTICULO', value: arma, inline: true },
-            { name: 'PRECIO', value: formatearPrecio(precio), inline: true }
+          .setTitle('Registro')
+          .setDescription(
+            `**Registro**\n\n` +
+            `Dinero recibido: ${formatearPrecio(precio)}\n` +
+            `Venta realizada: ${arma}\n` +
+            `Vendedor: ${vendedor}\n` +
+            `Comprador: ${comprador}\n` +
+            `Fecha: ${fechaFormateada} ${horaFormateada}`
           )
-          .setImage(comprobante.url)
-          .setTimestamp();
+          .setImage(comprobante.url);
 
         let exitos = 0;
         let fallos = 0;
         const errores = [];
 
-        // Envio canal local
+        // ========== ENVIO CANAL LOCAL ==========
         try {
           const canalLocal = await client.channels.fetch(CANAL_REGISTRO_LOCAL);
+          console.log(`[REGISTRO] Canal local encontrado: ${canalLocal.name} (${canalLocal.id})`);
           if (canalLocal && canalLocal.type === ChannelType.GuildText) {
             await canalLocal.send({ embeds: [embedRegistro] });
+            console.log('[REGISTRO] Enviado correctamente al canal local');
             exitos++;
+          } else {
+            throw new Error('El canal local no es un canal de texto');
           }
         } catch (err) {
           fallos++;
-          errores.push(`Canal local: ${err.message}`);
+          errores.push(`Canal local (${CANAL_REGISTRO_LOCAL}): ${err.message}`);
+          console.error('[REGISTRO] Error canal local:', err.message);
         }
 
-        // Envio canal externo
+        // ========== ENVIO CANAL EXTERNO ==========
         try {
+          console.log(`[REGISTRO] Intentando enviar a canal externo: ${CANAL_REGISTRO_EXTERNO}`);
           const canalExterno = await client.channels.fetch(CANAL_REGISTRO_EXTERNO);
+          console.log(`[REGISTRO] Canal externo encontrado: ${canalExterno.name} (${canalExterno.id}) en guild ${canalExterno.guild.name}`);
+          
           if (canalExterno && canalExterno.type === ChannelType.GuildText) {
+            // Verificar permisos
+            const botMember = canalExterno.guild.members.cache.get(client.user.id);
+            if (botMember) {
+              const permisos = canalExterno.permissionsFor(botMember);
+              console.log(`[REGISTRO] Permisos en canal externo: SEND_MESSAGES=${permisos?.has('SendMessages')}, VIEW_CHANNEL=${permisos?.has('ViewChannel')}`);
+            }
+            
             await canalExterno.send({ embeds: [embedRegistro] });
+            console.log('[REGISTRO] Enviado correctamente al canal externo');
             exitos++;
+          } else {
+            throw new Error('El canal externo no es un canal de texto');
           }
         } catch (err) {
           fallos++;
-          errores.push(`Canal externo: ${err.message}`);
+          errores.push(`Canal externo (${CANAL_REGISTRO_EXTERNO}): ${err.message}`);
+          console.error('[REGISTRO] Error canal externo:', err.message);
         }
 
-        // Respuesta al usuario
+        // ========== RESPUESTA AL USUARIO ==========
         let titulo, color, mensaje;
         if (exitos === 2) {
           titulo = 'Registro Exitoso';
@@ -450,7 +486,7 @@ client.on('interactionCreate', async interaction => {
         } else if (exitos === 1) {
           titulo = 'Registro Parcial';
           color = 0xB8860B;
-          mensaje = 'Se envio a 1 de 2 canales. Revisa los permisos del bot.';
+          mensaje = 'Se envio a 1 de 2 canales. Revisa los permisos del bot en el servidor externo.';
         } else {
           titulo = 'Fallo Total';
           color = 0x8B0000;
@@ -465,7 +501,15 @@ client.on('interactionCreate', async interaction => {
         if (fallos > 0) {
           embedRespuesta.addFields({ 
             name: 'Errores Detectados', 
-            value: errores.join('\n') 
+            value: errores.join('\n') || 'Error desconocido' 
+          });
+        }
+
+        // Agregar nota sobre el servidor externo si fallo
+        if (fallos > 0) {
+          embedRespuesta.addFields({
+            name: 'Nota Importante',
+            value: 'Para enviar al canal externo, el bot debe estar unido al servidor donde esta ese canal y tener permiso de enviar mensajes.'
           });
         }
 
@@ -493,9 +537,18 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
+// ==================== LOGS Y ERRORES ====================
 client.on('error', error => console.error('[CLIENT ERROR]', error));
-process.on('unhandledRejection', error => console.error('[UNHANDLED REJECTION]', error));
+client.on('warn', warn => console.warn('[CLIENT WARN]', warn));
+client.on('shardError', error => console.error('[SHARD ERROR]', error));
 
+process.on('unhandledRejection', error => console.error('[UNHANDLED REJECTION]', error));
+process.on('uncaughtException', error => {
+  console.error('[UNCAUGHT EXCEPTION]', error);
+  process.exit(1);
+});
+
+// ==================== LOGIN ====================
 client.login(TOKEN).catch(err => {
   console.error('[FATAL] No se pudo iniciar sesion:', err);
   process.exit(1);
