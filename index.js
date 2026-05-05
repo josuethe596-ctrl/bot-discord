@@ -5,14 +5,7 @@ const {
   Routes, 
   SlashCommandBuilder, 
   EmbedBuilder, 
-  ChannelType,
-  PermissionFlagsBits,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle
+  ChannelType
 } = require('discord.js');
 
 const client = new Client({
@@ -25,7 +18,7 @@ const TOKEN = process.env.TOKEN;
 const CLIENT_ID = '1500242491071402144';
 const GUILD_ID = '1123790874741047356';
 
-// Canales de registro
+// Canales
 const CANAL_REGISTRO_LOCAL = '1249140780493443072';
 const CANAL_REGISTRO_EXTERNO = '1477760530125947183';
 const CANAL_UNIDADES = '1477758449390719189';
@@ -35,7 +28,7 @@ const CANAL_ANUNCIOS = '1499835071245586544';
 const ROL_SUELDO = '1249089172308885576';
 const ROL_UNIDADES = '1486140887430992004';
 const ROL_PACAS = '1365194603380342895';
-const ROL_ANUNCIOS = '1249089172308885576'; // Mismo rol de sueldo para anuncios
+const ROL_ANUNCIOS = '1249089172308885576';
 
 // ==================== BASE DE DATOS ====================
 const CATALOGO_ARMAS = {
@@ -162,7 +155,7 @@ const TABLA_SUELDOS = {
 // ==================== REGISTROS EN MEMORIA ====================
 const registrosUnidades = {};
 const registrosPacas = {};
-const registrosArmamento = {}; // NUEVO: Registros de ventas de armamento por mes
+const registrosArmamento = {};
 
 // ==================== UTILIDADES ====================
 function formatearPrecio(cantidad) {
@@ -204,6 +197,64 @@ function verificarRol(interaction, rolId) {
 
 function verificarRolesMultiples(interaction, rolesIds) {
   return rolesIds.some(rolId => interaction.member.roles.cache.has(rolId));
+}
+
+// ==================== UTILIDADES DE TIEMPO PARA ANUNCIOS ====================
+
+function formatearFechaMilitar(fecha) {
+  const dia = String(fecha.getDate()).padStart(2, '0');
+  const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+  const anio = fecha.getFullYear();
+  return `${dia}/${mes}/${anio}`;
+}
+
+function formatearHoraMilitar(fecha) {
+  const horas = String(fecha.getHours()).padStart(2, '0');
+  const minutos = String(fecha.getMinutes()).padStart(2, '0');
+  return `${horas}:${minutos}`;
+}
+
+function parsearFechaHora(fechaStr, horaStr) {
+  // fechaStr: DD/MM/YYYY o DD/MM/YY
+  // horaStr: HH:MM (24h)
+  const partesFecha = fechaStr.split(/[\/\-]/);
+  let dia = parseInt(partesFecha[0]);
+  let mes = parseInt(partesFecha[1]) - 1;
+  let anio = parseInt(partesFecha[2]);
+  
+  if (anio < 100) anio += 2000;
+  
+  const partesHora = horaStr.split(':');
+  const horas = parseInt(partesHora[0]);
+  const minutos = parseInt(partesHora[1]) || 0;
+  
+  return new Date(anio, mes, dia, horas, minutos, 0);
+}
+
+function calcularTiempoRestante(fechaObjetivo) {
+  const ahora = new Date();
+  const diffMs = fechaObjetivo.getTime() - ahora.getTime();
+  
+  if (diffMs <= 0) return 'El evento ya ha comenzado';
+  
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHoras = Math.floor(diffMs / 3600000);
+  const diffDias = Math.floor(diffMs / 86400000);
+  
+  if (diffMin < 1) return 'En menos de 1 minuto';
+  if (diffMin < 60) return `En ${diffMin} minuto${diffMin !== 1 ? 's' : ''}`;
+  if (diffHoras < 24) return `En ${diffHoras} hora${diffHoras !== 1 ? 's' : ''}`;
+  if (diffDias === 1) return 'Manana';
+  if (diffDias === 2) return 'Pasado manana';
+  return `En ${diffDias} dias`;
+}
+
+function formatearTimestampDiscord(fecha) {
+  return `<t:${Math.floor(fecha.getTime() / 1000)}:F>`;
+}
+
+function formatearTimestampRelativo(fecha) {
+  return `<t:${Math.floor(fecha.getTime() / 1000)}:R>`;
 }
 
 // ==================== COMANDOS ====================
@@ -356,26 +407,27 @@ const commands = [
     .setName('pmes')
     .setDescription('Ver resumen mensual de dinero recolectado de pacas (solo autorizados)'),
 
-  // NUEVO COMANDO: /anuncios
+  // ==================== ANUNCIOS MEJORADO ====================
   new SlashCommandBuilder()
     .setName('anuncios')
-    .setDescription('Crear y enviar un anuncio oficial USMC (solo autorizados)')
+    .setDescription('Crear y enviar un comunicado oficial USMC (solo autorizados)')
     .addStringOption(o =>
       o.setName('titulo')
-        .setDescription('Titulo del anuncio')
+        .setDescription('Titulo del comunicado')
         .setRequired(true)
     )
     .addStringOption(o =>
       o.setName('contenido')
-        .setDescription('Contenido/mensaje del anuncio')
+        .setDescription('Contenido del comunicado')
         .setRequired(true)
     )
     .addStringOption(o =>
       o.setName('tipo')
-        .setDescription('Tipo de anuncio')
+        .setDescription('Tipo de comunicado')
         .setRequired(true)
         .addChoices(
-          { name: 'Comunicado Oficial', value: 'oficial' },
+          { name: 'Reunion Leadership', value: 'reunion_leadership' },
+          { name: 'Comunicado Oficial', value: 'comunicado' },
           { name: 'Alerta / Aviso', value: 'alerta' },
           { name: 'Entrenamiento', value: 'entrenamiento' },
           { name: 'Promocion', value: 'promocion' },
@@ -383,18 +435,47 @@ const commands = [
         )
     )
     .addStringOption(o =>
-      o.setName('color')
-        .setDescription('Color del embed (hex sin #, ej: 8B0000)')
+      o.setName('fecha_evento')
+        .setDescription('Fecha del evento (DD/MM/YYYY)')
+        .setRequired(false)
+    )
+    .addStringOption(o =>
+      o.setName('hora_evento')
+        .setDescription('Hora base del evento (HH:MM formato 24h)')
+        .setRequired(false)
+    )
+    .addStringOption(o =>
+      o.setName('zona_horaria')
+        .setDescription('Zona horaria base (ej: Argentina, Venezuela)')
+        .setRequired(false)
+    )
+    .addStringOption(o =>
+      o.setName('horarios')
+        .setDescription('Horarios adicionales: Pais:HH:MM, Pais:HH:MM (ej: Colombia:16:00, Mexico:15:00)')
+        .setRequired(false)
+    )
+    .addStringOption(o =>
+      o.setName('obligatorio')
+        .setDescription('La asistencia es obligatoria?')
+        .setRequired(false)
+        .addChoices(
+          { name: 'Si - Asistencia obligatoria', value: 'si' },
+          { name: 'No - Asistencia opcional', value: 'no' }
+        )
+    )
+    .addStringOption(o =>
+      o.setName('firma')
+        .setDescription('Firma y cargo (ej: WO-1 | Zayas)')
         .setRequired(false)
     )
     .addAttachmentOption(o =>
       o.setName('imagen')
-        .setDescription('Imagen adjunta al anuncio (opcional)')
+        .setDescription('Imagen del comunicado (opcional)')
         .setRequired(false)
     )
     .addStringOption(o =>
       o.setName('mencion')
-        .setDescription('Mencion especial (@everyone, @here, o rol ID)')
+        .setDescription('Mencion: @everyone, @here, o ID de rol')
         .setRequired(false)
     )
 
@@ -562,7 +643,6 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-      // ==================== REGISTRO MEJORADO ====================
       case 'registro': {
         await interaction.deferReply({ ephemeral: true });
 
@@ -597,7 +677,6 @@ client.on('interactionCreate', async interaction => {
           });
         }
 
-        // Guardar en memoria mensual
         const ahora = new Date();
         const claveMes = obtenerClaveMes(ahora);
         
@@ -646,24 +725,20 @@ client.on('interactionCreate', async interaction => {
         const errores = [];
         const hilosCreados = [];
 
-        // Funcion para enviar a hilos
         async function enviarAHilo(channelId, embed, nombreHilo) {
           try {
             const canal = await client.channels.fetch(channelId);
             
-            // Si es un canal de texto, crear hilo si no existe o enviar al existente
             if (canal.type === ChannelType.GuildText || canal.type === ChannelType.GuildAnnouncement) {
               const nombreThread = `${nombreHilo} — ${obtenerNombreMes(claveMes)}`;
               
-              // Buscar hilo existente del mes actual
               const threads = canal.threads.cache;
               let thread = threads.find(t => t.name === nombreThread);
               
               if (!thread) {
-                // Crear nuevo hilo
                 thread = await canal.threads.create({
                   name: nombreThread,
-                  autoArchiveDuration: 10080, // 7 dias
+                  autoArchiveDuration: 10080,
                   reason: `Registro automatico de ${nombreHilo}`
                 });
                 hilosCreados.push(nombreThread);
@@ -672,7 +747,6 @@ client.on('interactionCreate', async interaction => {
               await thread.send({ embeds: [embed] });
               return { success: true, thread: true };
             } 
-            // Si ya es un hilo, enviar directo
             else if ([ChannelType.PublicThread, ChannelType.PrivateThread, ChannelType.AnnouncementThread].includes(canal.type)) {
               await canal.send({ embeds: [embed] });
               return { success: true, thread: false };
@@ -685,7 +759,6 @@ client.on('interactionCreate', async interaction => {
           }
         }
 
-        // Enviar a canal local
         try {
           const resultado = await enviarAHilo(CANAL_REGISTRO_LOCAL, embedRegistro, 'Ventas Armamento');
           exitos++;
@@ -696,7 +769,6 @@ client.on('interactionCreate', async interaction => {
           console.error('[REGISTRO] Error canal local:', err.message);
         }
 
-        // Enviar a canal externo
         try {
           const resultado = await enviarAHilo(CANAL_REGISTRO_EXTERNO, embedRegistro, 'Ventas Armamento');
           exitos++;
@@ -707,7 +779,6 @@ client.on('interactionCreate', async interaction => {
           console.error('[REGISTRO] Error canal externo:', err.message);
         }
 
-        // Construir respuesta
         let titulo, color, mensaje;
         if (exitos === 2) {
           titulo = 'Registro Exitoso';
@@ -744,7 +815,6 @@ client.on('interactionCreate', async interaction => {
           });
         }
 
-        // Mostrar total acumulado del mes
         const totalMes = registrosArmamento[claveMes].reduce((suma, reg) => suma + reg.precio, 0);
         embedRespuesta.addFields({
           name: 'Total Acumulado del Mes',
@@ -756,7 +826,6 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-      // ==================== NUEVO: ARMES ====================
       case 'armes': {
         if (!verificarRol(interaction, ROL_SUELDO)) {
           return interaction.reply({
@@ -1218,15 +1287,15 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-      // ==================== NUEVO: ANUNCIOS ====================
+      // ==================== ANUNCIOS MEJORADO - ESTILO MILITAR ====================
       case 'anuncios': {
         if (!verificarRol(interaction, ROL_ANUNCIOS)) {
           return interaction.reply({
             embeds: [
               new EmbedBuilder()
                 .setColor(0x8B0000)
-                .setTitle('Acceso Denegado')
-                .setDescription('No tienes permiso para usar este comando. Solo personal autorizado.')
+                .setTitle('ACCESO DENEGADO')
+                .setDescription('No tienes permiso para emitir comunicados oficiales.')
             ],
             ephemeral: true
           });
@@ -1237,55 +1306,102 @@ client.on('interactionCreate', async interaction => {
         const titulo = interaction.options.getString('titulo');
         const contenido = interaction.options.getString('contenido');
         const tipo = interaction.options.getString('tipo');
-        const colorRaw = interaction.options.getString('color') || '8B0000';
+        const fechaEvento = interaction.options.getString('fecha_evento');
+        const horaEvento = interaction.options.getString('hora_evento');
+        const zonaHoraria = interaction.options.getString('zona_horaria');
+        const horariosRaw = interaction.options.getString('horarios');
+        const obligatorio = interaction.options.getString('obligatorio');
+        const firma = interaction.options.getString('firma');
         const imagen = interaction.options.getAttachment('imagen');
         const mencion = interaction.options.getString('mencion');
 
-        // Validar color
-        let color;
-        try {
-          color = parseInt(colorRaw.replace('#', ''), 16);
-          if (isNaN(color)) color = 0x8B0000;
-        } catch {
-          color = 0x8B0000;
-        }
+        // Formatear fecha actual militar
+        const ahora = new Date();
+        const fechaActual = formatearFechaMilitar(ahora);
 
-        // Iconos por tipo
-        const iconos = {
-          oficial: '📢',
-          alerta: '⚠️',
-          entrenamiento: '🎖️',
-          promocion: '⭐',
-          evento: '🎉'
+        // Titulos por tipo
+        const titulosTipo = {
+          reunion_leadership: 'REUNION LEADERSHIP',
+          comunicado: 'COMUNICADO OFICIAL',
+          alerta: 'ALERTA / AVISO',
+          entrenamiento: 'ENTRENAMIENTO PROGRAMADO',
+          promocion: 'PROMOCION OFICIAL',
+          evento: 'EVENTO ESPECIAL'
         };
 
-        const icono = iconos[tipo] || '📢';
-        const tipoFormateado = tipo.charAt(0).toUpperCase() + tipo.slice(1);
+        const tituloFormateado = titulosTipo[tipo] || 'COMUNICADO OFICIAL';
 
+        // Construir descripcion del anuncio
+        let descripcionAnuncio = '';
+
+        // Encabezado militar
+        descripcionAnuncio += `**${tituloFormateado}**\n\n`;
+        descripcionAnuncio += `${contenido}\n\n`;
+
+        // Asistencia obligatoria
+        if (obligatorio === 'si') {
+          descripcionAnuncio += `**ASISTENCIA:** Totalmente obligatoria. Temas importantes seran tratados.\n\n`;
+        } else if (obligatorio === 'no') {
+          descripcionAnuncio += `**ASISTENCIA:** Opcional.\n\n`;
+        }
+
+        // Horarios
+        let tieneHorarios = false;
+        let horariosTexto = '';
+
+        if (fechaEvento && horaEvento) {
+          tieneHorarios = true;
+          const fechaHoraEvento = parsearFechaHora(fechaEvento, horaEvento);
+          const tiempoRestante = calcularTiempoRestante(fechaHoraEvento);
+          
+          horariosTexto += `**FECHA DEL EVENTO:** ${fechaEvento}\n`;
+          horariosTexto += `**INICIA:** ${tiempoRestante}\n\n`;
+          horariosTexto += `**HORARIOS:**\n`;
+          
+          // Zona horaria base
+          if (zonaHoraria) {
+            horariosTexto += `${zonaHoraria}: ${horaEvento}\n`;
+          } else {
+            horariosTexto += `Hora base: ${horaEvento}\n`;
+          }
+
+          // Horarios adicionales
+          if (horariosRaw) {
+            const horariosExtra = horariosRaw.split(',').map(h => h.trim());
+            horariosExtra.forEach(h => {
+              const partes = h.split(':');
+              if (partes.length >= 2) {
+                const pais = partes[0].trim();
+                const hora = partes.slice(1).join(':').trim();
+                horariosTexto += `${pais}: ${hora}\n`;
+              }
+            });
+          }
+
+          horariosTexto += `\n**Timestamp:** ${formatearTimestampDiscord(fechaHoraEvento)} (${formatearTimestampRelativo(fechaHoraEvento)})`;
+        }
+
+        if (tieneHorarios) {
+          descripcionAnuncio += horariosTexto + '\n\n';
+        }
+
+        // Firma
+        descripcionAnuncio += `---\n`;
+        descripcionAnuncio += `**Firma Y Sello:** `;
+        if (firma) {
+          descripcionAnuncio += `${interaction.user} | ${firma}`;
+        } else {
+          descripcionAnuncio += `${interaction.user.tag}`;
+        }
+
+        // Crear embed
         const embedAnuncio = new EmbedBuilder()
-          .setColor(color)
-          .setTitle(`${icono} ${titulo}`)
-          .setDescription(contenido)
-          .addFields(
-            { 
-              name: 'Tipo de Anuncio', 
-              value: `${icono} ${tipoFormateado}`, 
-              inline: true 
-            },
-            { 
-              name: 'Publicado por', 
-              value: `<@${interaction.user.id}>`, 
-              inline: true 
-            },
-            { 
-              name: 'Fecha', 
-              value: `<t:${Math.floor(Date.now() / 1000)}:F>`, 
-              inline: true 
-            }
-          )
+          .setColor(0x8B0000)
+          .setTitle(`${fechaActual} | United States Marine Corps`)
+          .setDescription(descripcionAnuncio)
           .setTimestamp()
           .setFooter({ 
-            text: 'USMC Comunicados Oficiales | United States Marine Corps',
+            text: 'Leadership Company of Texas | USMC Comunicados Oficiales',
             iconURL: interaction.guild?.iconURL({ dynamic: true }) || null
           });
 
@@ -1293,7 +1409,7 @@ client.on('interactionCreate', async interaction => {
           embedAnuncio.setImage(imagen.url);
         }
 
-        // Construir contenido de mencion
+        // Mencion
         let contenidoMencion = '';
         if (mencion) {
           if (mencion === '@everyone') contenidoMencion = '@everyone';
@@ -1317,7 +1433,7 @@ client.on('interactionCreate', async interaction => {
               embeds: [
                 new EmbedBuilder()
                   .setColor(0x8B0000)
-                  .setTitle('Error')
+                  .setTitle('ERROR')
                   .setDescription('El canal de anuncios no es valido.')
               ]
             });
@@ -1328,23 +1444,24 @@ client.on('interactionCreate', async interaction => {
             embeds: [embedAnuncio]
           });
 
-          // Si es canal de anuncios, publicar
+          // Crosspost si es canal de anuncios
           if (canalAnuncios.type === ChannelType.GuildAnnouncement && mensajeEnviado.crosspost) {
             await mensajeEnviado.crosspost().catch(() => {});
           }
 
+          // Embed de confirmacion
+          let confirmDesc = `**Comunicado emitido exitosamente**\n\n`;
+          confirmDesc += `**Titulo:** ${titulo}\n`;
+          confirmDesc += `**Tipo:** ${tituloFormateado}\n`;
+          confirmDesc += `**Canal:** <#${CANAL_ANUNCIOS}>\n`;
+          if (mencion) confirmDesc += `**Mencion:** ${mencion}\n`;
+          if (tieneHorarios) confirmDesc += `**Evento programado:** ${fechaEvento} ${horaEvento}\n`;
+          confirmDesc += `\n[Ver Comunicado](${mensajeEnviado.url})`;
+
           const embedConfirmacion = new EmbedBuilder()
             .setColor(0x006400)
-            .setTitle('Anuncio Publicado')
-            .setDescription(
-              `**Anuncio enviado exitosamente**\n\n` +
-              `**Titulo:** ${titulo}\n` +
-              `**Tipo:** ${tipoFormateado}\n` +
-              `**Canal:** <#${CANAL_ANUNCIOS}>\n` +
-              `**Mencion:** ${mencion || 'Ninguna'}\n` +
-              `**Imagen:** ${imagen ? 'Adjunta' : 'No'}\n\n` +
-              `[Ver Anuncio](${mensajeEnviado.url})`
-            )
+            .setTitle('COMUNICADO PUBLICADO')
+            .setDescription(confirmDesc)
             .setTimestamp();
 
           await interaction.editReply({ embeds: [embedConfirmacion] });
@@ -1355,8 +1472,8 @@ client.on('interactionCreate', async interaction => {
             embeds: [
               new EmbedBuilder()
                 .setColor(0x8B0000)
-                .setTitle('Error')
-                .setDescription(`No se pudo enviar el anuncio: ${err.message}`)
+                .setTitle('ERROR DEL SISTEMA')
+                .setDescription(`No se pudo emitir el comunicado: ${err.message}`)
             ]
           });
         }
