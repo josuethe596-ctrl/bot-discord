@@ -26,6 +26,7 @@ const CANAL_UNIDADES = '1477758449390719189';
 // Roles autorizados
 const ROL_SUELDO = '1249089172308885576';
 const ROL_UNIDADES = '1486140887430992004';
+const ROL_PACAS = '1365194603380342895';
 
 // ==================== BASE DE DATOS ====================
 const CATALOGO_ARMAS = {
@@ -149,8 +150,9 @@ const TABLA_SUELDOS = {
   ]
 };
 
-// ==================== REGISTROS DE UNIDADES (EN MEMORIA) ====================
+// ==================== REGISTROS EN MEMORIA ====================
 const registrosUnidades = {};
+const registrosPacas = {};
 
 // ==================== UTILIDADES ====================
 function formatearPrecio(cantidad) {
@@ -188,6 +190,10 @@ function obtenerNombreMes(claveMes) {
 
 function verificarRol(interaction, rolId) {
   return interaction.member.roles.cache.has(rolId);
+}
+
+function verificarRolesMultiples(interaction, rolesIds) {
+  return rolesIds.some(rolId => interaction.member.roles.cache.has(rolId));
 }
 
 // ==================== COMANDOS ====================
@@ -306,7 +312,35 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('umes')
-    .setDescription('Ver resumen mensual de mantenimientos (solo autorizados)')
+    .setDescription('Ver resumen mensual de mantenimientos (solo autorizados)'),
+
+  new SlashCommandBuilder()
+    .setName('pacade')
+    .setDescription('Registrar dinero recolectado de pacas (solo autorizados)')
+    .addStringOption(o =>
+      o.setName('periodo_inicio')
+        .setDescription('Fecha inicio del periodo (DD/MM/AA) (ej: 01/02/26)')
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName('periodo_fin')
+        .setDescription('Fecha fin del periodo (DD/MM/AA) (ej: 01/03/26)')
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName('monto')
+        .setDescription('Monto recolectado en el periodo (ej: 360000)')
+        .setRequired(true)
+    )
+    .addAttachmentOption(o =>
+      o.setName('captura')
+        .setDescription('Screenshot / Comprobante del dinero recolectado')
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('pmes')
+    .setDescription('Ver resumen mensual de dinero recolectado de pacas (solo autorizados)')
 
 ].map(c => c.toJSON());
 
@@ -509,7 +543,7 @@ client.on('interactionCreate', async interaction => {
       }
 
       case 'unidadesp': {
-        if (!verificarRol(interaction, ROL_UNIDADES)) {
+        if (!verificarRolesMultiples(interaction, [ROL_UNIDADES, ROL_PACAS])) {
           return interaction.reply({
             embeds: [
               new EmbedBuilder()
@@ -637,7 +671,7 @@ client.on('interactionCreate', async interaction => {
       }
 
       case 'umes': {
-        if (!verificarRol(interaction, ROL_UNIDADES)) {
+        if (!verificarRolesMultiples(interaction, [ROL_UNIDADES, ROL_PACAS])) {
           return interaction.reply({
             embeds: [
               new EmbedBuilder()
@@ -689,6 +723,185 @@ client.on('interactionCreate', async interaction => {
           .setTimestamp()
           .setFooter({ 
             text: `Solicitado por ${interaction.user.tag} | USMC Unidades` 
+          });
+
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      case 'pacade': {
+        if (!verificarRol(interaction, ROL_PACAS)) {
+          return interaction.reply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x8B0000)
+                .setTitle('Acceso Denegado')
+                .setDescription('No tienes permiso para usar este comando.')
+            ],
+            ephemeral: true
+          });
+        }
+
+        await interaction.deferReply({ ephemeral: true });
+
+        const periodoInicio = interaction.options.getString('periodo_inicio');
+        const periodoFin = interaction.options.getString('periodo_fin');
+        const montoRaw = interaction.options.getString('monto');
+        const captura = interaction.options.getAttachment('captura');
+
+        const montoLimpio = montoRaw.replace(/[$,.\s]/g, '');
+        const monto = parseInt(montoLimpio);
+
+        if (isNaN(monto) || monto <= 0) {
+          return interaction.editReply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x8B0000)
+                .setTitle('Error')
+                .setDescription(`El monto "${montoRaw}" no es valido. Usa solo numeros.`)
+            ]
+          });
+        }
+
+        if (!captura?.url) {
+          return interaction.editReply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x8B0000)
+                .setTitle('Error')
+                .setDescription('Debes adjuntar una captura valida.')
+            ]
+          });
+        }
+
+        const ahora = new Date();
+        const claveMes = obtenerClaveMes(ahora);
+
+        if (!registrosPacas[claveMes]) {
+          registrosPacas[claveMes] = [];
+        }
+
+        registrosPacas[claveMes].push({
+          monto: monto,
+          periodoInicio: periodoInicio,
+          periodoFin: periodoFin,
+          usuario: interaction.user.tag,
+          timestamp: ahora.toISOString()
+        });
+
+        const embedPaca = new EmbedBuilder()
+          .setColor(0x8B0000)
+          .setDescription(
+            `# __Dinero recolectado__\n\n` +
+            `**Del ${periodoInicio} al ${periodoFin}**\n\n` +
+            `# ${formatearPrecio(monto)}`
+          )
+          .setImage(captura.url)
+          .setTimestamp()
+          .setFooter({ 
+            text: `Registrado por ${interaction.user.tag}` 
+          });
+
+        let enviado = false;
+
+        try {
+          const canalUnidades = await client.channels.fetch(CANAL_UNIDADES);
+          console.log(`[PACAS] Canal: ${canalUnidades.name} | Tipo: ${canalUnidades.type}`);
+
+          const esCanalValido = [
+            ChannelType.GuildText,
+            ChannelType.PublicThread,
+            ChannelType.PrivateThread,
+            ChannelType.AnnouncementThread,
+            ChannelType.GuildForum
+          ].includes(canalUnidades.type);
+
+          if (esCanalValido) {
+            await canalUnidades.send({ embeds: [embedPaca] });
+            console.log('[PACAS] Enviado correctamente');
+            enviado = true;
+          } else {
+            throw new Error(`Tipo no soportado: ${canalUnidades.type}`);
+          }
+        } catch (err) {
+          console.error('[PACAS] Error:', err.message);
+        }
+
+        const embedRespuesta = new EmbedBuilder()
+          .setColor(enviado ? 0x006400 : 0xB8860B)
+          .setTitle(enviado ? 'Registro Guardado' : 'Registro Guardado (Local)')
+          .setDescription(
+            `**Dinero de pacas registrado**\n\n` +
+            `Periodo: ${periodoInicio} al ${periodoFin}\n` +
+            `Monto: ${formatearPrecio(monto)}\n` +
+            `Mes: ${obtenerNombreMes(claveMes)}\n\n` +
+            `${enviado ? 'Enviado al hilo de foro correctamente.' : 'Guardado localmente. No se pudo enviar al hilo de foro.'}`
+          );
+
+        if (!enviado) {
+          embedRespuesta.addFields({
+            name: 'Nota',
+            value: 'Verifica que el bot tenga acceso al hilo y permisos de enviar mensajes.'
+          });
+        }
+
+        await interaction.editReply({ embeds: [embedRespuesta] });
+        break;
+      }
+
+      case 'pmes': {
+        if (!verificarRol(interaction, ROL_PACAS)) {
+          return interaction.reply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x8B0000)
+                .setTitle('Acceso Denegado')
+                .setDescription('No tienes permiso para usar este comando.')
+            ],
+            ephemeral: true
+          });
+        }
+
+        const ahora = new Date();
+        const claveMesActual = obtenerClaveMes(ahora);
+        const nombreMesActual = obtenerNombreMes(claveMesActual);
+
+        const registrosMes = registrosPacas[claveMesActual] || [];
+        const totalMes = registrosMes.reduce((suma, reg) => suma + reg.monto, 0);
+
+        const mesesDisponibles = Object.keys(registrosPacas).sort().reverse();
+
+        let descripcion = `**Resumen del mes: ${nombreMesActual}**\n\n`;
+
+        if (registrosMes.length === 0) {
+          descripcion += `No hay registros de dinero de pacas este mes.\n`;
+        } else {
+          descripcion += `**Total de registros:** ${registrosMes.length}\n`;
+          descripcion += `**Dinero total recolectado:** ${formatearPrecio(totalMes)}\n\n`;
+
+          descripcion += `**Detalle de registros:**\n`;
+          registrosMes.forEach((reg, index) => {
+            descripcion += `${index + 1}. Del ${reg.periodoInicio} al ${reg.periodoFin} — ${formatearPrecio(reg.monto)}\n`;
+          });
+        }
+
+        if (mesesDisponibles.length > 1) {
+          descripcion += `\n**Historial mensual:**\n`;
+          mesesDisponibles.forEach(mes => {
+            if (mes === claveMesActual) return;
+            const total = registrosPacas[mes].reduce((s, r) => s + r.monto, 0);
+            const cantidad = registrosPacas[mes].length;
+            descripcion += `${obtenerNombreMes(mes)}: ${formatearPrecio(total)} (${cantidad} registros)\n`;
+          });
+        }
+
+        const embed = new EmbedBuilder()
+          .setColor(0x8B0000)
+          .setTitle('RESUMEN MENSUAL DE DINERO DE PACAS')
+          .setDescription(descripcion)
+          .setTimestamp()
+          .setFooter({ 
+            text: `Solicitado por ${interaction.user.tag} | USMC Pacas` 
           });
 
         await interaction.reply({ embeds: [embed] });
