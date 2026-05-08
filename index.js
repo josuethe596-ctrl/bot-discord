@@ -688,7 +688,6 @@ client.on('interactionCreate', async interaction => {
       }
 
       case 'registro': {
-        // DeferReply con fetchReply para mantener la interacción activa
         await interaction.deferReply({ ephemeral: true, fetchReply: true }).catch(() => {});
 
         const vendedor = interaction.options.getString('vendedor');
@@ -784,101 +783,60 @@ client.on('interactionCreate', async interaction => {
         let exitos = 0;
         let fallos = 0;
         const errores = [];
-        const hilosCreados = [];
 
-        async function enviarAHilo(channelId, embed, nombreHilo) {
+        async function enviarACanal(channelId, embed) {
           try {
+            console.log(`[REGISTRO] Intentando enviar al canal: ${channelId}`);
+
             const canal = await client.channels.fetch(channelId);
 
-            // Verificar que el canal existe y es accesible
             if (!canal) {
-              throw new Error('No se pudo obtener el canal (puede que el bot no tenga acceso)');
+              throw new Error('Canal no encontrado o bot sin acceso');
             }
 
-            // Verificar permisos del bot en el canal
+            console.log(`[REGISTRO] Canal obtenido: ${canal.name} (tipo: ${canal.type})`);
+
             const botMember = interaction.guild?.members?.me;
             if (!botMember) {
-              throw new Error('No se pudo obtener informacion del bot en el servidor');
+              throw new Error('Bot no encontrado en el servidor');
             }
 
-            const permisosEnCanal = canal.permissionsFor(botMember);
-
-            if (!permisosEnCanal) {
-              throw new Error('No se pudieron verificar permisos en el canal');
+            const permisos = canal.permissionsFor(botMember);
+            if (!permisos) {
+              throw new Error('No se pudieron leer permisos del canal');
             }
 
-            if (!permisosEnCanal.has('ViewChannel')) {
-              throw new Error('El bot no tiene permiso para VER este canal');
+            const permisosFaltantes = [];
+            if (!permisos.has('ViewChannel')) permisosFaltantes.push('ViewChannel');
+            if (!permisos.has('SendMessages')) permisosFaltantes.push('SendMessages');
+            if (!permisos.has('EmbedLinks')) permisosFaltantes.push('EmbedLinks');
+            if (!permisos.has('AttachFiles')) permisosFaltantes.push('AttachFiles');
+
+            if (permisosFaltantes.length > 0) {
+              throw new Error(`Permisos faltantes: ${permisosFaltantes.join(', ')}`);
             }
-            if (!permisosEnCanal.has('SendMessages')) {
-              throw new Error('El bot no tiene permiso para ENVIAR MENSAJES en este canal');
-            }
-            if (!permisosEnCanal.has('CreatePublicThreads')) {
-              throw new Error('El bot no tiene permiso para CREAR HILOS en este canal');
-            }
 
-            if (canal.type === ChannelType.GuildText || canal.type === ChannelType.GuildAnnouncement) {
-              const nombreThread = `${nombreHilo} — ${obtenerNombreMes(claveMes)}`;
-
-              // Buscar thread existente
-              let thread = canal.threads.cache.find(t => t.name === nombreThread);
-
-              // Si no está en cache, intentar buscar en los threads activos
-              if (!thread) {
-                try {
-                  const fetchedThreads = await canal.threads.fetchActive();
-                  thread = fetchedThreads.threads.find(t => t.name === nombreThread);
-                } catch (e) {
-                  console.log(`[REGISTRO] No se pudieron fetch threads activos: ${e.message}`);
-                }
-              }
-
-              if (!thread) {
-                thread = await canal.threads.create({
-                  name: nombreThread,
-                  autoArchiveDuration: 10080,
-                  reason: `Registro automatico de ${nombreHilo}`
-                });
-                hilosCreados.push(nombreThread);
-                console.log(`[REGISTRO] Hilo creado: ${nombreThread} en canal ${channelId}`);
-              }
-
-              // Verificar permisos en el thread
-              const permisosThread = thread.permissionsFor(botMember);
-              if (!permisosThread || !permisosThread.has('SendMessages')) {
-                throw new Error('El bot no tiene permiso para ENVIAR MENSAJES en el hilo');
-              }
-
-              await thread.send({ embeds: [embed] });
-              console.log(`[REGISTRO] Mensaje enviado al hilo ${thread.name} en canal ${channelId}`);
-              return { success: true, thread: true };
-            } 
-            else if ([ChannelType.PublicThread, ChannelType.PrivateThread, ChannelType.AnnouncementThread].includes(canal.type)) {
-              await canal.send({ embeds: [embed] });
-              console.log(`[REGISTRO] Mensaje enviado directamente al canal ${channelId}`);
-              return { success: true, thread: false };
-            }
-            else {
-              throw new Error(`Tipo de canal no soportado: ${canal.type} (necesita ser texto o anuncio)`);
-            }
+            await canal.send({ embeds: [embed] });
+            console.log(`[REGISTRO] ✅ Enviado correctamente al canal ${channelId}`);
+            return { success: true };
           } catch (err) {
-            console.error(`[REGISTRO] Error en canal ${channelId}:`, err.message);
-            throw new Error(`${err.message}`);
+            console.error(`[REGISTRO] ❌ Error canal ${channelId}:`, err.message);
+            throw new Error(err.message);
           }
         }
 
-        // ENVIAR AL CANAL PRINCIPAL (1249140780493443072) - PRIMERO
+        // ENVIAR AL CANAL PRINCIPAL (1249140780493443072)
         try {
-          await enviarAHilo(CANAL_REGISTRO_LOCAL, embedRegistro, 'Ventas Armamento');
+          await enviarACanal(CANAL_REGISTRO_LOCAL, embedRegistro);
           exitos++;
         } catch (err) {
           fallos++;
           errores.push(`Canal principal (1249140780493443072): ${err.message}`);
         }
 
-        // ENVIAR AL CANAL EXTERNO (1477760530125947183) - SEGUNDO
+        // ENVIAR AL CANAL EXTERNO (1477760530125947183)
         try {
-          await enviarAHilo(CANAL_REGISTRO_EXTERNO, embedRegistro, 'Ventas Armamento');
+          await enviarACanal(CANAL_REGISTRO_EXTERNO, embedRegistro);
           exitos++;
         } catch (err) {
           fallos++;
@@ -897,7 +855,7 @@ client.on('interactionCreate', async interaction => {
         } else {
           titulo = '❌ Fallo Total';
           color = 0x8B0000;
-          mensaje = '**No se pudo enviar a ningun canal.** El registro se guardo localmente en memoria.';
+          mensaje = '**No se pudo enviar a ningun canal.** Guardado localmente.';
         }
 
         const embedRespuesta = new EmbedBuilder()
@@ -910,14 +868,13 @@ client.on('interactionCreate', async interaction => {
             `• Comprador: ${comprador}\n` +
             `• Arma: ${arma}\n` +
             `• Precio: ${formatearPrecio(precio)}\n` +
-            `• Mes: ${obtenerNombreMes(claveMes)}\n` +
-            `${hilosCreados.length > 0 ? `\n**Hilos nuevos creados:** ${hilosCreados.join(', ')}` : ''}`
+            `• Mes: ${obtenerNombreMes(claveMes)}`
           );
 
         if (fallos > 0) {
           embedRespuesta.addFields({ 
-            name: '⚠️ Errores detectados', 
-            value: errores.join('\n') || 'Error desconocido'
+            name: '⚠️ Errores', 
+            value: errores.join('\n')
           });
         }
 
@@ -928,18 +885,13 @@ client.on('interactionCreate', async interaction => {
           inline: false
         });
 
-        // Intentar editReply, si falla usar followUp
         try {
           await interaction.editReply({ embeds: [embedRespuesta] });
         } catch (replyErr) {
-          console.error('[REGISTRO] Error al responder:', replyErr.message);
           try {
-            await interaction.followUp({ 
-              embeds: [embedRespuesta], 
-              ephemeral: true 
-            });
+            await interaction.followUp({ embeds: [embedRespuesta], ephemeral: true });
           } catch (followUpErr) {
-            console.error('[REGISTRO] Error en followUp:', followUpErr.message);
+            console.error('[REGISTRO] No se pudo responder al usuario');
           }
         }
         break;
