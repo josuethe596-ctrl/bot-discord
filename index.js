@@ -1,3 +1,4 @@
+index.js
 const { 
   Client, 
   GatewayIntentBits, 
@@ -723,11 +724,11 @@ client.on('interactionCreate', async interaction => {
 
         const ahora = new Date();
         const claveMes = obtenerClaveMes(ahora);
-        
+
         if (!registrosArmamento[claveMes]) {
           registrosArmamento[claveMes] = [];
         }
-        
+
         registrosArmamento[claveMes].push({
           vendedor,
           comprador,
@@ -772,13 +773,27 @@ client.on('interactionCreate', async interaction => {
         async function enviarAHilo(channelId, embed, nombreHilo) {
           try {
             const canal = await client.channels.fetch(channelId);
-            
+
+            // VERIFICAR PERMISOS DEL BOT EN EL CANAL
+            const botMember = interaction.guild.members.me;
+            const permisosEnCanal = canal.permissionsFor(botMember);
+
+            if (!permisosEnCanal.has('ViewChannel')) {
+              throw new Error('El bot no tiene permiso para ver este canal');
+            }
+            if (!permisosEnCanal.has('SendMessages')) {
+              throw new Error('El bot no tiene permiso para enviar mensajes en este canal');
+            }
+            if (!permisosEnCanal.has('CreatePublicThreads')) {
+              throw new Error('El bot no tiene permiso para crear hilos en este canal');
+            }
+
             if (canal.type === ChannelType.GuildText || canal.type === ChannelType.GuildAnnouncement) {
               const nombreThread = `${nombreHilo} — ${obtenerNombreMes(claveMes)}`;
-              
+
               const threads = canal.threads.cache;
               let thread = threads.find(t => t.name === nombreThread);
-              
+
               if (!thread) {
                 thread = await canal.threads.create({
                   name: nombreThread,
@@ -787,7 +802,13 @@ client.on('interactionCreate', async interaction => {
                 });
                 hilosCreados.push(nombreThread);
               }
-              
+
+              // Verificar permisos en el thread tambien
+              const permisosThread = thread.permissionsFor(botMember);
+              if (!permisosThread.has('SendMessages')) {
+                throw new Error('El bot no tiene permiso para enviar mensajes en el hilo existente');
+              }
+
               await thread.send({ embeds: [embed] });
               return { success: true, thread: true };
             } 
@@ -796,30 +817,32 @@ client.on('interactionCreate', async interaction => {
               return { success: true, thread: false };
             }
             else {
-              throw new Error('Tipo de canal no soportado para hilos');
+              throw new Error(`Tipo de canal no soportado: ${canal.type}`);
             }
           } catch (err) {
-            throw err;
+            throw new Error(`${err.message}`);
           }
         }
 
+        // ENVIAR AL CANAL PRINCIPAL (1249140780493443072) - PRIMERO
         try {
           const resultado = await enviarAHilo(CANAL_REGISTRO_LOCAL, embedRegistro, 'Ventas Armamento');
           exitos++;
-          if (resultado.thread) console.log(`[REGISTRO] Hilo creado/enviado en canal local`);
+          if (resultado.thread) console.log(`[REGISTRO] Hilo creado/enviado en canal principal (${CANAL_REGISTRO_LOCAL})`);
         } catch (err) {
           fallos++;
-          errores.push(`Canal local: ${err.message}`);
-          console.error('[REGISTRO] Error canal local:', err.message);
+          errores.push(`Canal principal (${CANAL_REGISTRO_LOCAL}): ${err.message}`);
+          console.error('[REGISTRO] Error canal principal:', err.message);
         }
 
+        // ENVIAR AL CANAL EXTERNO (1477760530125947183) - SEGUNDO
         try {
           const resultado = await enviarAHilo(CANAL_REGISTRO_EXTERNO, embedRegistro, 'Ventas Armamento');
           exitos++;
-          if (resultado.thread) console.log(`[REGISTRO] Hilo creado/enviado en canal externo`);
+          if (resultado.thread) console.log(`[REGISTRO] Hilo creado/enviado en canal externo (${CANAL_REGISTRO_EXTERNO})`);
         } catch (err) {
           fallos++;
-          errores.push(`Canal externo: ${err.message}`);
+          errores.push(`Canal externo (${CANAL_REGISTRO_EXTERNO}): ${err.message}`);
           console.error('[REGISTRO] Error canal externo:', err.message);
         }
 
@@ -869,7 +892,6 @@ client.on('interactionCreate', async interaction => {
         await interaction.editReply({ embeds: [embedRespuesta] });
         break;
       }
-
       case 'armes': {
         if (!verificarRol(interaction, ROL_SUELDO)) {
           return interaction.reply({
