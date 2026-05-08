@@ -1,4 +1,3 @@
-index.js
 const { 
   Client, 
   GatewayIntentBits, 
@@ -689,7 +688,8 @@ client.on('interactionCreate', async interaction => {
       }
 
       case 'registro': {
-        await interaction.deferReply({ ephemeral: true });
+        // DeferReply con fetchReply para mantener la interacción activa
+        await interaction.deferReply({ ephemeral: true, fetchReply: true }).catch(() => {});
 
         const vendedor = interaction.options.getString('vendedor');
         const comprador = interaction.options.getString('comprador');
@@ -705,7 +705,15 @@ client.on('interactionCreate', async interaction => {
                 .setTitle('Error')
                 .setDescription('Debes adjuntar una imagen valida del comprobante.')
             ]
-          });
+          }).catch(() => interaction.followUp({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x8B0000)
+                .setTitle('Error')
+                .setDescription('Debes adjuntar una imagen valida del comprobante.')
+            ],
+            ephemeral: true
+          }));
         }
 
         const precioLimpio = precioRaw.replace(/[$,.\s]/g, '');
@@ -719,7 +727,15 @@ client.on('interactionCreate', async interaction => {
                 .setTitle('Error')
                 .setDescription(`El precio "${precioRaw}" no es valido.`)
             ]
-          });
+          }).catch(() => interaction.followUp({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x8B0000)
+                .setTitle('Error')
+                .setDescription(`El precio "${precioRaw}" no es valido.`)
+            ],
+            ephemeral: true
+          }));
         }
 
         const ahora = new Date();
@@ -774,25 +790,48 @@ client.on('interactionCreate', async interaction => {
           try {
             const canal = await client.channels.fetch(channelId);
 
-            // VERIFICAR PERMISOS DEL BOT EN EL CANAL
-            const botMember = interaction.guild.members.me;
+            // Verificar que el canal existe y es accesible
+            if (!canal) {
+              throw new Error('No se pudo obtener el canal (puede que el bot no tenga acceso)');
+            }
+
+            // Verificar permisos del bot en el canal
+            const botMember = interaction.guild?.members?.me;
+            if (!botMember) {
+              throw new Error('No se pudo obtener informacion del bot en el servidor');
+            }
+
             const permisosEnCanal = canal.permissionsFor(botMember);
 
+            if (!permisosEnCanal) {
+              throw new Error('No se pudieron verificar permisos en el canal');
+            }
+
             if (!permisosEnCanal.has('ViewChannel')) {
-              throw new Error('El bot no tiene permiso para ver este canal');
+              throw new Error('El bot no tiene permiso para VER este canal');
             }
             if (!permisosEnCanal.has('SendMessages')) {
-              throw new Error('El bot no tiene permiso para enviar mensajes en este canal');
+              throw new Error('El bot no tiene permiso para ENVIAR MENSAJES en este canal');
             }
             if (!permisosEnCanal.has('CreatePublicThreads')) {
-              throw new Error('El bot no tiene permiso para crear hilos en este canal');
+              throw new Error('El bot no tiene permiso para CREAR HILOS en este canal');
             }
 
             if (canal.type === ChannelType.GuildText || canal.type === ChannelType.GuildAnnouncement) {
               const nombreThread = `${nombreHilo} — ${obtenerNombreMes(claveMes)}`;
 
-              const threads = canal.threads.cache;
-              let thread = threads.find(t => t.name === nombreThread);
+              // Buscar thread existente
+              let thread = canal.threads.cache.find(t => t.name === nombreThread);
+
+              // Si no está en cache, intentar buscar en los threads activos
+              if (!thread) {
+                try {
+                  const fetchedThreads = await canal.threads.fetchActive();
+                  thread = fetchedThreads.threads.find(t => t.name === nombreThread);
+                } catch (e) {
+                  console.log(`[REGISTRO] No se pudieron fetch threads activos: ${e.message}`);
+                }
+              }
 
               if (!thread) {
                 thread = await canal.threads.create({
@@ -801,64 +840,64 @@ client.on('interactionCreate', async interaction => {
                   reason: `Registro automatico de ${nombreHilo}`
                 });
                 hilosCreados.push(nombreThread);
+                console.log(`[REGISTRO] Hilo creado: ${nombreThread} en canal ${channelId}`);
               }
 
-              // Verificar permisos en el thread tambien
+              // Verificar permisos en el thread
               const permisosThread = thread.permissionsFor(botMember);
-              if (!permisosThread.has('SendMessages')) {
-                throw new Error('El bot no tiene permiso para enviar mensajes en el hilo existente');
+              if (!permisosThread || !permisosThread.has('SendMessages')) {
+                throw new Error('El bot no tiene permiso para ENVIAR MENSAJES en el hilo');
               }
 
               await thread.send({ embeds: [embed] });
+              console.log(`[REGISTRO] Mensaje enviado al hilo ${thread.name} en canal ${channelId}`);
               return { success: true, thread: true };
             } 
             else if ([ChannelType.PublicThread, ChannelType.PrivateThread, ChannelType.AnnouncementThread].includes(canal.type)) {
               await canal.send({ embeds: [embed] });
+              console.log(`[REGISTRO] Mensaje enviado directamente al canal ${channelId}`);
               return { success: true, thread: false };
             }
             else {
-              throw new Error(`Tipo de canal no soportado: ${canal.type}`);
+              throw new Error(`Tipo de canal no soportado: ${canal.type} (necesita ser texto o anuncio)`);
             }
           } catch (err) {
+            console.error(`[REGISTRO] Error en canal ${channelId}:`, err.message);
             throw new Error(`${err.message}`);
           }
         }
 
         // ENVIAR AL CANAL PRINCIPAL (1249140780493443072) - PRIMERO
         try {
-          const resultado = await enviarAHilo(CANAL_REGISTRO_LOCAL, embedRegistro, 'Ventas Armamento');
+          await enviarAHilo(CANAL_REGISTRO_LOCAL, embedRegistro, 'Ventas Armamento');
           exitos++;
-          if (resultado.thread) console.log(`[REGISTRO] Hilo creado/enviado en canal principal (${CANAL_REGISTRO_LOCAL})`);
         } catch (err) {
           fallos++;
-          errores.push(`Canal principal (${CANAL_REGISTRO_LOCAL}): ${err.message}`);
-          console.error('[REGISTRO] Error canal principal:', err.message);
+          errores.push(`Canal principal (1249140780493443072): ${err.message}`);
         }
 
         // ENVIAR AL CANAL EXTERNO (1477760530125947183) - SEGUNDO
         try {
-          const resultado = await enviarAHilo(CANAL_REGISTRO_EXTERNO, embedRegistro, 'Ventas Armamento');
+          await enviarAHilo(CANAL_REGISTRO_EXTERNO, embedRegistro, 'Ventas Armamento');
           exitos++;
-          if (resultado.thread) console.log(`[REGISTRO] Hilo creado/enviado en canal externo (${CANAL_REGISTRO_EXTERNO})`);
         } catch (err) {
           fallos++;
-          errores.push(`Canal externo (${CANAL_REGISTRO_EXTERNO}): ${err.message}`);
-          console.error('[REGISTRO] Error canal externo:', err.message);
+          errores.push(`Canal externo (1477760530125947183): ${err.message}`);
         }
 
         let titulo, color, mensaje;
         if (exitos === 2) {
-          titulo = 'Registro Exitoso';
+          titulo = '✅ Registro Exitoso';
           color = 0x006400;
-          mensaje = 'Venta registrada y enviada a ambos hilos correctamente.';
+          mensaje = 'Venta registrada y enviada a **ambos canales** correctamente.';
         } else if (exitos === 1) {
-          titulo = 'Registro Parcial';
+          titulo = '⚠️ Registro Parcial';
           color = 0xB8860B;
-          mensaje = 'Venta enviada a 1 de 2 hilos.';
+          mensaje = 'Venta enviada a **1 de 2 canales**.';
         } else {
-          titulo = 'Fallo Total';
+          titulo = '❌ Fallo Total';
           color = 0x8B0000;
-          mensaje = 'No se pudo enviar a ningun hilo. Guardado localmente.';
+          mensaje = '**No se pudo enviar a ningun canal.** El registro se guardo localmente en memoria.';
         }
 
         const embedRespuesta = new EmbedBuilder()
@@ -866,30 +905,43 @@ client.on('interactionCreate', async interaction => {
           .setTitle(titulo)
           .setDescription(
             `${mensaje}\n\n` +
-            `**Detalles:**\n` +
-            `Vendedor: ${vendedor}\n` +
-            `Comprador: ${comprador}\n` +
-            `Arma: ${arma}\n` +
-            `Precio: ${formatearPrecio(precio)}\n` +
-            `Mes: ${obtenerNombreMes(claveMes)}\n` +
-            `${hilosCreados.length > 0 ? `\n**Hilos creados:** ${hilosCreados.join(', ')}` : ''}`
+            `**Detalles de la venta:**\n` +
+            `• Vendedor: ${vendedor}\n` +
+            `• Comprador: ${comprador}\n` +
+            `• Arma: ${arma}\n` +
+            `• Precio: ${formatearPrecio(precio)}\n` +
+            `• Mes: ${obtenerNombreMes(claveMes)}\n` +
+            `${hilosCreados.length > 0 ? `\n**Hilos nuevos creados:** ${hilosCreados.join(', ')}` : ''}`
           );
 
         if (fallos > 0) {
           embedRespuesta.addFields({ 
-            name: 'Errores', 
-            value: errores.join('\n') 
+            name: '⚠️ Errores detectados', 
+            value: errores.join('\n') || 'Error desconocido'
           });
         }
 
         const totalMes = registrosArmamento[claveMes].reduce((suma, reg) => suma + reg.precio, 0);
         embedRespuesta.addFields({
-          name: 'Total Acumulado del Mes',
+          name: '💰 Total Acumulado del Mes',
           value: `${formatearPrecio(totalMes)} (${registrosArmamento[claveMes].length} ventas)`,
           inline: false
         });
 
-        await interaction.editReply({ embeds: [embedRespuesta] });
+        // Intentar editReply, si falla usar followUp
+        try {
+          await interaction.editReply({ embeds: [embedRespuesta] });
+        } catch (replyErr) {
+          console.error('[REGISTRO] Error al responder:', replyErr.message);
+          try {
+            await interaction.followUp({ 
+              embeds: [embedRespuesta], 
+              ephemeral: true 
+            });
+          } catch (followUpErr) {
+            console.error('[REGISTRO] Error en followUp:', followUpErr.message);
+          }
+        }
         break;
       }
       case 'armes': {
