@@ -786,24 +786,34 @@ client.on('interactionCreate', async interaction => {
 
         async function enviarACanal(channelId, embed) {
           try {
-            console.log(`[REGISTRO] Intentando enviar al canal: ${channelId}`);
+            console.log(`[REGISTRO] === INICIO ENVIO ===`);
+            console.log(`[REGISTRO] Canal ID: ${channelId}`);
+            console.log(`[REGISTRO] Guild ID: ${interaction.guildId}`);
+            console.log(`[REGISTRO] Bot user: ${client.user?.tag}`);
 
             const canal = await client.channels.fetch(channelId);
 
             if (!canal) {
-              throw new Error('Canal no encontrado o bot sin acceso');
+              throw new Error('Canal no encontrado');
             }
 
-            console.log(`[REGISTRO] Canal obtenido: ${canal.name} (tipo: ${canal.type})`);
+            console.log(`[REGISTRO] Canal obtenido: ${canal.name} | Tipo: ${canal.type} | Guild: ${canal.guildId}`);
 
-            const botMember = interaction.guild?.members?.me;
+            // Verificar que el canal pertenezca al mismo servidor de la interaccion
+            if (canal.guildId !== interaction.guildId) {
+              console.log(`[REGISTRO] ADVERTENCIA: Canal guild (${canal.guildId}) != Interaction guild (${interaction.guildId})`);
+            }
+
+            const botMember = canal.guild?.members?.me;
             if (!botMember) {
-              throw new Error('Bot no encontrado en el servidor');
+              throw new Error('Bot no encontrado en el guild del canal');
             }
+
+            console.log(`[REGISTRO] Bot member encontrado: ${botMember.id}`);
 
             const permisos = canal.permissionsFor(botMember);
             if (!permisos) {
-              throw new Error('No se pudieron leer permisos del canal');
+              throw new Error('No se pudieron leer permisos');
             }
 
             const permisosFaltantes = [];
@@ -812,15 +822,19 @@ client.on('interactionCreate', async interaction => {
             if (!permisos.has('EmbedLinks')) permisosFaltantes.push('EmbedLinks');
             if (!permisos.has('AttachFiles')) permisosFaltantes.push('AttachFiles');
 
+            console.log(`[REGISTRO] Permisos faltantes: [${permisosFaltantes.join(', ') || 'NINGUNO'}]`);
+
             if (permisosFaltantes.length > 0) {
               throw new Error(`Permisos faltantes: ${permisosFaltantes.join(', ')}`);
             }
 
-            await canal.send({ embeds: [embed] });
-            console.log(`[REGISTRO] ✅ Enviado correctamente al canal ${channelId}`);
-            return { success: true };
+            console.log(`[REGISTRO] Enviando mensaje...`);
+            const mensajeEnviado = await canal.send({ embeds: [embed] });
+            console.log(`[REGISTRO] ✅ MENSAJE ENVIADO: ${mensajeEnviado.id} | URL: ${mensajeEnviado.url}`);
+            return { success: true, mensaje: mensajeEnviado };
           } catch (err) {
-            console.error(`[REGISTRO] ❌ Error canal ${channelId}:`, err.message);
+            console.error(`[REGISTRO] ❌ ERROR COMPLETO canal ${channelId}:`, err);
+            console.error(`[REGISTRO] Error stack:`, err.stack);
             throw new Error(err.message);
           }
         }
